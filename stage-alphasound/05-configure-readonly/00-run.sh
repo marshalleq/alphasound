@@ -6,4 +6,4 @@ install -m 644 files/alphasound-init.service "${ROOTFS_DIR}/etc/systemd/system/a
 
 # Install default config to boot partition
 mkdir -p "${ROOTFS_DIR}/boot/firmware"
-install -m 644 ../../config/alphasound.txt "${ROOTFS_DIR}/boot/firmware/alphasound.txt"
+install -m 644 files/alphasound.txt "${ROOTFS_DIR}/boot/firmware/alphasound.txt"
