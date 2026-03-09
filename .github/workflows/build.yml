@@ -10,15 +10,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU for arm64 emulation
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Build image with pi-gen
         uses: usimd/pi-gen-action@v1
@@ -39,7 +34,6 @@ jobs:
           extra-host-dependencies: git
           extra-host-modules: ''
           verbose-output: true
-          docker-opts: --privileged
           pi-gen-version: arm64
 
       - name: Get date for release tag
