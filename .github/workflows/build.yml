@@ -31,7 +31,7 @@ jobs:
           wpa-essid: ''
           wpa-password: ''
           enable-ssh: 1
-          extra-host-dependencies: ''
+          extra-host-dependencies: git
           extra-host-modules: ''
           pi-gen-version: arm64
 
