@@ -25,7 +25,7 @@ fi
 # Write pi-gen config
 cat > "$PIGEN_DIR/config" << 'EOF'
 IMG_NAME=alphasound
-RELEASE=trixie
+RELEASE=bookworm
 TARGET_HOSTNAME=alphasound
 FIRST_USER_NAME=alphasound
 FIRST_USER_PASSWD=alphasound
