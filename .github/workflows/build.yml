@@ -21,7 +21,7 @@ jobs:
         with:
           image-name: alphasound
           stage-list: stage0 stage1 stage2 ./stage-alphasound
-          release: trixie
+          release: bookworm
           hostname: alphasound
           username: alphasound
           password: alphasound
@@ -54,7 +54,7 @@ jobs:
             Automated build from `main` branch.
 
             **Shairport-sync**: built from latest development branch
-            **Base OS**: Raspberry Pi OS Lite (Trixie, arm64)
+            **Base OS**: Raspberry Pi OS Lite (Bookworm, arm64)
             **Filesystem**: Read-only root with overlay
 
             ## Quick start
