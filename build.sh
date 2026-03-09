@@ -19,7 +19,7 @@ if [ -d "$PIGEN_DIR" ]; then
     cd "$SCRIPT_DIR"
 else
     echo "Cloning pi-gen..."
-    git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git "$PIGEN_DIR"
+    git clone --depth 1 -b arm64 https://github.com/RPi-Distro/pi-gen.git "$PIGEN_DIR"
 fi
 
 # Write pi-gen config
@@ -34,21 +34,18 @@ LOCALE_DEFAULT=en_US.UTF-8
 KEYBOARD_KEYMAP=us
 KEYBOARD_LAYOUT="English (US)"
 DEPLOY_ZIP=0
+DEPLOY_COMPRESSION=none
 EOF
 
-# Skip stages 3-5 (desktop stuff we don't need)
-touch "$PIGEN_DIR/stage3/SKIP" "$PIGEN_DIR/stage4/SKIP" "$PIGEN_DIR/stage5/SKIP"
-touch "$PIGEN_DIR/stage4/SKIP_IMAGES" "$PIGEN_DIR/stage5/SKIP_IMAGES"
+# Skip stages 2-5 (we build on stage1 minimal)
+touch "$PIGEN_DIR/stage2/SKIP" "$PIGEN_DIR/stage3/SKIP" "$PIGEN_DIR/stage4/SKIP" "$PIGEN_DIR/stage5/SKIP"
+touch "$PIGEN_DIR/stage2/SKIP_IMAGES" "$PIGEN_DIR/stage3/SKIP_IMAGES" "$PIGEN_DIR/stage4/SKIP_IMAGES" "$PIGEN_DIR/stage5/SKIP_IMAGES"
 
 # Remove any previous custom stage link
 rm -f "$PIGEN_DIR/stage-alphasound"
 
 # Symlink our custom stage into pi-gen
 ln -sf "$SCRIPT_DIR/stage-alphasound" "$PIGEN_DIR/stage-alphasound"
-
-# Copy alphasound config into pi-gen for the build
-mkdir -p "$PIGEN_DIR/stage-alphasound/05-configure-readonly/alphasound-config"
-cp "$SCRIPT_DIR/config/alphasound.txt" "$PIGEN_DIR/stage-alphasound/05-configure-readonly/alphasound-config/"
 
 # Build with Docker
 echo ""
@@ -59,10 +56,13 @@ echo ""
 cd "$PIGEN_DIR"
 ./build-docker.sh
 
-# Copy output
+# Copy and compress output
 mkdir -p "$DEPLOY_DIR"
-cp "$PIGEN_DIR/deploy/"*.img* "$DEPLOY_DIR/" 2>/dev/null || true
-cp "$PIGEN_DIR/deploy/"*.zip* "$DEPLOY_DIR/" 2>/dev/null || true
+for img in "$PIGEN_DIR/deploy/"*.img; do
+    echo "Compressing $(basename "$img")..."
+    xz -9 -T0 "$img"
+    cp "${img}.xz" "$DEPLOY_DIR/"
+done
 
 echo ""
 echo "=== Build complete ==="

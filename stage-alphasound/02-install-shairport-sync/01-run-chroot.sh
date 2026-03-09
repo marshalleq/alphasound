@@ -2,7 +2,7 @@
 # Remove build dependencies and clean up to slim the image
 # shairport-sync and nqptp are already compiled and installed at this point
 
-# Purge build-only packages
+# Purge build-only packages (keep runtime deps, raspi-config, ssh, sudo)
 apt-get purge -y \
     build-essential \
     git \
@@ -21,7 +21,6 @@ apt-get purge -y \
     uuid-dev \
     libgcrypt-dev \
     xxd \
-    libplist-utils \
     libavutil-dev \
     libavcodec-dev \
     libavformat-dev \
@@ -30,21 +29,24 @@ apt-get purge -y \
     cpp gcc g++ make dpkg-dev
 
 # Remove orphaned packages pulled in as build deps
-apt-get autoremove -y
+apt-get autoremove --purge -y
 
 # Clean apt cache
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
-# Remove cloud-init (installed by stage2, not needed in a car)
-apt-get purge -y cloud-init || true
-rm -rf /etc/cloud /var/lib/cloud
-
 # Strip installed binaries
 strip /usr/local/bin/shairport-sync 2>/dev/null || true
 strip /usr/local/bin/nqptp 2>/dev/null || true
 
-# Remove leftover build artifacts
+# Remove docs, man pages, locale data we don't need
+rm -rf /usr/share/doc/*
+rm -rf /usr/share/man/*
+rm -rf /usr/share/info/*
+rm -rf /usr/share/locale/*
+rm -rf /usr/share/i18n/*
+
+# Remove leftover build artifacts and logs
 rm -rf /tmp/* /var/tmp/*
-rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/*
 rm -rf /var/log/*
+rm -rf /var/cache/*

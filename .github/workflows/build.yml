@@ -23,8 +23,9 @@ jobs:
         id: build
         with:
           image-name: alphasound
-          stage-list: stage0 stage1 stage2 ./stage-alphasound
+          stage-list: stage0 stage1 ./stage-alphasound
           release: trixie
+          compression: none
           hostname: alphasound
           username: alphasound
           password: alphasound

@@ -24,3 +24,7 @@ libsystemd-dev
 systemd-dev
 hostapd
 isc-dhcp-server
+raspi-config
+alsa-utils
+openssh-server
+sudo
