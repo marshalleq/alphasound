@@ -1,0 +1,15 @@
+[Unit]
+Description=Alphasound Initialization
+DefaultDependencies=no
+Before=network.target shairport-sync.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/alphasound-init
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

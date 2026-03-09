@@ -1,0 +1,67 @@
+name: Build Alphasound Image
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly build — picks up shairport-sync and OS updates
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image with pi-gen
+        uses: usimd/pi-gen-action@v1
+        id: build
+        with:
+          image-name: alphasound
+          stage-list: stage0 stage1 stage2 ./stage-alphasound
+          release: bookworm
+          hostname: alphasound
+          username: alphasound
+          password: alphasound
+          locale: en_US.UTF-8
+          keyboard-keymap: us
+          keyboard-layout: English (US)
+          wpa-essid: ''
+          wpa-password: ''
+          enable-ssh: 1
+          extra-host-dependencies: ''
+          extra-host-modules: ''
+          pi-gen-version: arm64
+
+      - name: Get date for release tag
+        id: date
+        run: echo "date=$(date +'%Y%m%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Compress image
+        run: |
+          xz -9 -T0 ${{ steps.build.outputs.image-path }}
+          echo "COMPRESSED_IMAGE=${{ steps.build.outputs.image-path }}.xz" >> "$GITHUB_ENV"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ steps.date.outputs.date }}-${{ github.run_number }}
+          name: Alphasound ${{ steps.date.outputs.date }}
+          body: |
+            Automated build from `main` branch.
+
+            **Shairport-sync**: built from latest development branch
+            **Base OS**: Raspberry Pi OS Lite (Bookworm, arm64)
+            **Filesystem**: Read-only root with overlay
+
+            ## Quick start
+            1. Flash the `.img.xz` file to an SD card (Raspberry Pi Imager can flash `.xz` directly)
+            2. Mount the boot partition and edit `alphasound.txt` to set your preferences
+            3. Insert SD card, power on, connect to the WiFi network, and AirPlay
+          files: ${{ env.COMPRESSED_IMAGE }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

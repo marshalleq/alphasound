@@ -1,0 +1,8 @@
+interface=wlan0
+ssid=%%SSID%%
+hw_mode=g
+channel=%%CHANNEL%%
+ieee80211d=1
+country_code=%%COUNTRY%%
+ieee80211n=1
+wmm_enabled=1
