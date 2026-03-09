@@ -33,13 +33,13 @@ jobs:
         run: |
           mkdir -p cache
           docker run --rm \
-            -v "$(pwd)/cache:/cache" \
-            --user "$(id -u):$(id -g)" \
+            -v "$(pwd)/cache:/out" \
             alpine:${ALPINE_VERSION} \
             sh -c "
               apk update && \
-              apk fetch -R -o /cache \
-                alpine-base shairport-sync hostapd dnsmasq avahi
+              apk fetch -R -o /tmp/pkgs \
+                alpine-base shairport-sync hostapd dnsmasq avahi && \
+              cp /tmp/pkgs/*.apk /out/
             "
           echo "=== Cached packages ==="
           ls cache/ | wc -l
