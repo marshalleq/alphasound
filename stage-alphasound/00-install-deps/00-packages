@@ -1,6 +1,6 @@
 build-essential
 git
-pkg-config
+pkgconf
 autoconf
 automake
 libtool
@@ -20,6 +20,6 @@ libplist-utils
 libavutil-dev
 libavcodec-dev
 libavformat-dev
-systemd-dev
+libsystemd-dev
 hostapd
 isc-dhcp-server
