@@ -1,13 +1,8 @@
 #!/bin/bash -e
-# Set up boot-time configuration and read-only filesystem
+# Configure services and read-only filesystem (runs in chroot)
 
-# Install the alphasound init script and service
-install -m 755 files/alphasound-init /usr/local/bin/alphasound-init
-install -m 644 files/alphasound-init.service /etc/systemd/system/alphasound-init.service
+# Enable alphasound init service
 systemctl enable alphasound-init
-
-# Install default config to boot partition
-install -m 644 /alphasound-config/alphasound.txt /boot/firmware/alphasound.txt
 
 # Create alphasound user for SSH access in dev mode
 useradd -m -s /bin/bash alphasound || true

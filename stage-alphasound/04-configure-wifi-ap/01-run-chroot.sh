@@ -1,10 +1,5 @@
 #!/bin/bash -e
-# Configure WiFi access point and DHCP server
-
-# Install template and config files
-install -m 644 files/hostapd.conf.template /etc/hostapd/hostapd.conf.template
-install -m 644 files/dhcpd.conf /etc/dhcp/dhcpd.conf
-install -m 644 files/isc-dhcp-server /etc/default/isc-dhcp-server
+# Configure WiFi AP services (runs in chroot)
 
 # Disable services from auto-starting (we control them via alphasound-init)
 systemctl unmask hostapd
