@@ -55,11 +55,14 @@ jobs:
 
       - name: Create disk image
         run: |
-          # Calculate needed size: tarball + cache + overlay + headroom
-          TARBALL_SIZE=$(stat -c%s alpine-rpi.tar.gz)
+          # Calculate needed size from actual uncompressed content
+          mkdir -p /tmp/alpine-size
+          tar tzf alpine-rpi.tar.gz | head -1 > /dev/null  # validate tarball
+          TARBALL_SIZE=$(tar xzf alpine-rpi.tar.gz -C /tmp/alpine-size && du -sb /tmp/alpine-size | cut -f1)
+          rm -rf /tmp/alpine-size
           CACHE_SIZE=$(du -sb cache/ | cut -f1)
-          # Add 20MB headroom
-          IMG_SIZE=$(( (TARBALL_SIZE + CACHE_SIZE + 20*1024*1024) / 1024 / 1024 + 1 ))
+          # Add 32MB headroom for FAT32 overhead and apkovl
+          IMG_SIZE=$(( (TARBALL_SIZE + CACHE_SIZE + 32*1024*1024) / 1024 / 1024 + 1 ))
           echo "Image size: ${IMG_SIZE}MB"
 
           # Create image with single FAT32 partition
