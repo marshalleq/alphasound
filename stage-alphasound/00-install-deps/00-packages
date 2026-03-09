@@ -1,5 +1,6 @@
 build-essential
 git
+pkg-config
 autoconf
 automake
 libtool
