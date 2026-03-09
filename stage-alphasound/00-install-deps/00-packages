@@ -21,5 +21,6 @@ libavutil-dev
 libavcodec-dev
 libavformat-dev
 libsystemd-dev
+systemd-dev
 hostapd
 isc-dhcp-server
