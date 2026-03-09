@@ -22,65 +22,103 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl
+        run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl mtools
 
-      - name: Download Alpine RPi image
+      - name: Download Alpine RPi tarball
         run: |
-          curl -L -o alpine-rpi.img.gz \
-            "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/alpine-rpi-${ALPINE_RELEASE}-aarch64.img.gz"
-          gunzip alpine-rpi.img.gz
+          curl -L -o alpine-rpi.tar.gz \
+            "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/alpine-rpi-${ALPINE_RELEASE}-aarch64.tar.gz"
 
-      - name: Expand and mount image
+      - name: Fetch packages for offline cache
         run: |
-          # Expand to 512MB for package cache
-          truncate -s 512M alpine-rpi.img
+          mkdir -p cache
+          docker run --rm \
+            -v "$(pwd)/cache:/cache" \
+            --user "$(id -u):$(id -g)" \
+            alpine:${ALPINE_VERSION} \
+            sh -c "
+              apk update && \
+              apk fetch -R -o /cache \
+                alpine-base shairport-sync hostapd dnsmasq avahi
+            "
+          echo "=== Cached packages ==="
+          ls cache/ | wc -l
+          echo "packages"
+          du -sh cache/
 
-          # Set up loop device and resize partition
-          sudo losetup -fP alpine-rpi.img
-          LOOP=$(losetup -j alpine-rpi.img | cut -d: -f1)
+      - name: Create disk image
+        run: |
+          # Calculate needed size: tarball + cache + overlay + headroom
+          TARBALL_SIZE=$(stat -c%s alpine-rpi.tar.gz)
+          CACHE_SIZE=$(du -sb cache/ | cut -f1)
+          # Add 20MB headroom
+          IMG_SIZE=$(( (TARBALL_SIZE + CACHE_SIZE + 20*1024*1024) / 1024 / 1024 + 1 ))
+          echo "Image size: ${IMG_SIZE}MB"
+
+          # Create image with single FAT32 partition
+          dd if=/dev/zero of=alphasound.img bs=1M count=${IMG_SIZE}
+          parted -s alphasound.img mklabel msdos
+          parted -s alphasound.img mkpart primary fat32 1MiB 100%
+          parted -s alphasound.img set 1 boot on
+          parted -s alphasound.img set 1 lba on
+
+          # Format FAT32
+          sudo losetup -fP alphasound.img
+          LOOP=$(losetup -j alphasound.img | cut -d: -f1)
           echo "LOOP=${LOOP}" >> "$GITHUB_ENV"
-
-          # Resize partition to fill image
-          echo ", +" | sudo sfdisk -N 1 "${LOOP}" 2>/dev/null || true
-          sudo partprobe "${LOOP}" 2>/dev/null || true
-          sudo fatresize -s 512M "${LOOP}p1" 2>/dev/null || sudo fsck.vfat -a "${LOOP}p1" 2>/dev/null || true
+          sudo mkfs.vfat -F 32 "${LOOP}p1"
 
           # Mount
           sudo mkdir -p /mnt/alphasound
           sudo mount "${LOOP}p1" /mnt/alphasound
-          echo "=== Boot partition contents ==="
-          ls /mnt/alphasound/
+
+      - name: Populate image
+        run: |
+          # Extract Alpine boot files
+          sudo tar xzf alpine-rpi.tar.gz -C /mnt/alphasound/
+
+          # Copy package cache
+          sudo cp -r cache /mnt/alphasound/cache
+
+          # usercfg.txt for RPi config
+          sudo tee /mnt/alphasound/usercfg.txt > /dev/null << 'EOF'
+          gpu_mem=16
+          dtparam=audio=on
+          # dtoverlay=hifiberry-dac
+          EOF
+          sudo sed -i 's/^[[:space:]]*//' /mnt/alphasound/usercfg.txt
+
+          # Copy user config file
+          sudo cp overlay/alphasound.txt /mnt/alphasound/alphasound.txt
 
       - name: Create apkovl overlay
         run: |
           OVERLAY_DIR=$(mktemp -d)
 
-          # Copy overlay structure
+          # Copy our overlay config files
           cp -a overlay/etc "${OVERLAY_DIR}/"
           echo "alphasound" > "${OVERLAY_DIR}/etc/hostname"
 
           # APK repositories
           mkdir -p "${OVERLAY_DIR}/etc/apk"
-          cat > "${OVERLAY_DIR}/etc/apk/repositories" << EOF
+          cat > "${OVERLAY_DIR}/etc/apk/repositories" << REPOS
           /media/mmcblk0p1/cache
           https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main
           https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community
-          EOF
+          REPOS
+          sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/repositories"
 
           # APK world (packages to auto-install at boot)
-          cat > "${OVERLAY_DIR}/etc/apk/world" << 'EOF'
+          cat > "${OVERLAY_DIR}/etc/apk/world" << 'WORLD'
           alpine-base
           shairport-sync
           hostapd
           dnsmasq
           avahi
-          EOF
-
-          # Clean leading whitespace from heredocs
-          sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/repositories"
+          WORLD
           sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/world"
 
-          # APK cache symlink
+          # APK cache symlink to boot partition
           ln -sf /media/mmcblk0p1/cache "${OVERLAY_DIR}/etc/apk/cache"
 
           # Enable services
@@ -98,33 +136,9 @@ jobs:
           # Pack apkovl
           (cd "${OVERLAY_DIR}" && sudo tar czf /mnt/alphasound/alphasound.apkovl.tar.gz .)
 
-      - name: Cache packages for offline boot
-        run: |
-          sudo mkdir -p /mnt/alphasound/cache
-          docker run --rm \
-            -v /mnt/alphasound/cache:/cache \
-            alpine:${ALPINE_VERSION} \
-            sh -c "
-              apk update && \
-              apk fetch -R -o /cache \
-                alpine-base shairport-sync hostapd dnsmasq avahi
-            "
-          echo "=== Cached packages ==="
-          ls /mnt/alphasound/cache/ | head -20
-          echo "Total: $(du -sh /mnt/alphasound/cache/ | cut -f1)"
-
-      - name: Configure boot
-        run: |
-          # usercfg.txt
-          cat | sudo tee /mnt/alphasound/usercfg.txt << 'EOF'
-          gpu_mem=16
-          dtparam=audio=on
-          # dtoverlay=hifiberry-dac
-          EOF
-          sudo sed -i 's/^[[:space:]]*//' /mnt/alphasound/usercfg.txt
-
-          # Copy user config
-          sudo cp overlay/alphasound.txt /mnt/alphasound/alphasound.txt
+          echo "=== Image contents ==="
+          ls -lh /mnt/alphasound/
+          echo "Total used: $(du -sh /mnt/alphasound/ | cut -f1)"
 
       - name: Finalise image
         run: |
@@ -132,13 +146,7 @@ jobs:
           sudo umount /mnt/alphasound
           sudo losetup -d "${LOOP}"
 
-          # Shrink image — truncate to actual partition size + padding
-          PART_END=$(sfdisk -l alpine-rpi.img | grep img1 | awk '{print $3}')
-          IMG_SIZE=$(( (PART_END + 1) * 512 ))
-          truncate -s "${IMG_SIZE}" alpine-rpi.img
-
-          xz -9 -T0 alpine-rpi.img
-          mv alpine-rpi.img.xz alphasound.img.xz
+          xz -9 -T0 alphasound.img
 
           echo "=== Final image ==="
           ls -lh alphasound.img.xz
