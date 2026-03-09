@@ -35,14 +35,19 @@ jobs:
           docker run --rm \
             -v "$(pwd)/cache:/out" \
             alpine:${ALPINE_VERSION} \
-            sh -c "
-              echo 'https://dl-cdn.alpinelinux.org/alpine/v3.21/main' > /etc/apk/repositories && \
-              echo 'https://dl-cdn.alpinelinux.org/alpine/v3.21/community' >> /etc/apk/repositories && \
-              apk update && \
-              apk fetch -R -o /tmp/pkgs \
-                alpine-base shairport-sync hostapd dnsmasq avahi && \
+            sh -c '
+              set -x
+              echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories
+              echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories
+              apk update
+              mkdir -p /tmp/pkgs
+              apk fetch -R -o /tmp/pkgs alpine-base shairport-sync hostapd dnsmasq avahi
+              echo "apk fetch exit code: $?"
+              ls /tmp/pkgs/ | wc -l
               cp /tmp/pkgs/*.apk /out/
-            "
+              echo "cp exit code: $?"
+              ls /out/ | wc -l
+            '
           echo "=== Cached packages ==="
           ls cache/ | wc -l
           echo "packages"
