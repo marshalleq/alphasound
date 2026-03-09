@@ -34,6 +34,7 @@ jobs:
           wpa-essid: ''
           wpa-password: ''
           enable-ssh: 1
+          enable-cloud-init: 0
           extra-host-dependencies: git
           extra-host-modules: ''
           verbose-output: true
