@@ -39,6 +39,7 @@ jobs:
           extra-host-dependencies: git
           extra-host-modules: ''
           verbose-output: true
+          docker-opts: --privileged
           pi-gen-version: arm64
 
       - name: Get date for release tag
