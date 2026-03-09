@@ -1,5 +1,5 @@
 # Alphasound Configuration
-# Edit this file on the boot partition before inserting the SD card.
+# Edit this file on the SD card before inserting it.
 # Changes take effect on next boot.
 
 # Mode: RUN = car mode (WiFi AP), DEV = development mode (joins existing WiFi)
@@ -11,7 +11,7 @@ ALPHASOUND_SSID=Alphasound
 # AirPlay device name shown on your phone
 ALPHASOUND_NAME=Alphasound
 
-# WiFi channel (1-11, pick one that doesn't clash with your phone's hotspot)
+# WiFi channel (1-11)
 ALPHASOUND_CHANNEL=11
 
 # Country code for WiFi regulatory domain (e.g. NZ, US, GB, IE, AU)
@@ -19,10 +19,6 @@ ALPHASOUND_COUNTRY=NZ
 
 # ALSA output device — "hw:0" for HAT DAC, "hw:1" for USB DAC
 ALPHASOUND_OUTPUT_DEVICE=hw:0
-
-# DAC overlay for config.txt (leave empty for USB DACs)
-# Common values: hifiberry-dac (Pimoroni pHAT), hifiberry-dacplus
-ALPHASOUND_DAC_OVERLAY=hifiberry-dac
 
 # Max volume in dB (reduce if DAC overloads car AUX input, 0.0 = full)
 ALPHASOUND_VOLUME_MAX_DB=-3.00

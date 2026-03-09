@@ -1,0 +1,86 @@
+#!/bin/sh
+# alphasound-init: reads config and starts WiFi AP + AirPlay
+# Runs at boot via OpenRC local.d
+
+CONFIG_FILE="/media/mmcblk0p1/alphasound.txt"
+
+# Defaults
+ALPHASOUND_MODE="RUN"
+ALPHASOUND_SSID="Alphasound"
+ALPHASOUND_NAME="Alphasound"
+ALPHASOUND_CHANNEL="11"
+ALPHASOUND_COUNTRY="NZ"
+ALPHASOUND_OUTPUT_DEVICE="hw:0"
+ALPHASOUND_VOLUME_MAX_DB="-3.00"
+ALPHASOUND_DEV_WIFI_SSID=""
+ALPHASOUND_DEV_WIFI_PASSWORD=""
+
+# Read config
+if [ -f "$CONFIG_FILE" ]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            \#*|"") continue ;;
+            ALPHASOUND_*) eval "$key='$value'" ;;
+        esac
+    done < "$CONFIG_FILE"
+fi
+
+# Disable WiFi power saving
+iw dev wlan0 set power_save off 2>/dev/null || true
+
+if [ "$ALPHASOUND_MODE" = "RUN" ]; then
+    #
+    # === CAR MODE ===
+    #
+
+    # Generate hostapd config
+    sed -e "s/%%SSID%%/$ALPHASOUND_SSID/g" \
+        -e "s/%%CHANNEL%%/$ALPHASOUND_CHANNEL/g" \
+        -e "s/%%COUNTRY%%/$ALPHASOUND_COUNTRY/g" \
+        /etc/hostapd/hostapd.conf.template > /tmp/hostapd.conf
+
+    # Update shairport-sync config
+    cat > /etc/shairport-sync.conf << EOF
+general =
+{
+    name = "$ALPHASOUND_NAME";
+    ignore_volume_control = "yes";
+    volume_max_db = $ALPHASOUND_VOLUME_MAX_DB;
+};
+
+alsa =
+{
+    output_device = "$ALPHASOUND_OUTPUT_DEVICE";
+};
+EOF
+
+    # Start WiFi access point
+    hostapd -B -P /run/hostapd.pid /tmp/hostapd.conf
+    ip addr add 10.0.10.1/24 dev wlan0
+
+    # Start DHCP server
+    rc-service dnsmasq start
+
+    # Restart shairport-sync with new config
+    rc-service shairport-sync restart
+
+else
+    #
+    # === DEV MODE ===
+    #
+
+    if [ -n "$ALPHASOUND_DEV_WIFI_SSID" ]; then
+        cat > /etc/wpa_supplicant/wpa_supplicant.conf << EOF
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=$ALPHASOUND_COUNTRY
+
+network={
+    ssid="$ALPHASOUND_DEV_WIFI_SSID"
+    psk="$ALPHASOUND_DEV_WIFI_PASSWORD"
+}
+EOF
+        wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
+        udhcpc -i wlan0
+    fi
+fi

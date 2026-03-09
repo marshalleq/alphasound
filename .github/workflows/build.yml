@@ -4,12 +4,15 @@ on:
   push:
     branches: [main]
   schedule:
-    # Weekly build — picks up shairport-sync and OS updates
     - cron: '0 4 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+env:
+  ALPINE_VERSION: "3.21"
+  ALPINE_RELEASE: "3.21.6"
 
 jobs:
   build:
@@ -18,37 +21,131 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build image with pi-gen
-        uses: usimd/pi-gen-action@v1
-        id: build
-        with:
-          image-name: alphasound
-          stage-list: stage0 stage1 stage2 ./stage-alphasound
-          release: trixie
-          compression: none
-          hostname: alphasound
-          username: alphasound
-          password: alphasound
-          locale: en_US.UTF-8
-          keyboard-keymap: us
-          keyboard-layout: English (US)
-          wpa-essid: ''
-          wpa-password: ''
-          enable-ssh: 1
-          enable-cloud-init: 0
-          extra-host-dependencies: git
-          extra-host-modules: ''
-          verbose-output: true
-          pi-gen-version: arm64
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl
+
+      - name: Download Alpine RPi image
+        run: |
+          curl -L -o alpine-rpi.img.gz \
+            "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/alpine-rpi-${ALPINE_RELEASE}-aarch64.img.gz"
+          gunzip alpine-rpi.img.gz
+
+      - name: Expand and mount image
+        run: |
+          # Expand to 512MB for package cache
+          truncate -s 512M alpine-rpi.img
+
+          # Set up loop device and resize partition
+          sudo losetup -fP alpine-rpi.img
+          LOOP=$(losetup -j alpine-rpi.img | cut -d: -f1)
+          echo "LOOP=${LOOP}" >> "$GITHUB_ENV"
+
+          # Resize partition to fill image
+          echo ", +" | sudo sfdisk -N 1 "${LOOP}" 2>/dev/null || true
+          sudo partprobe "${LOOP}" 2>/dev/null || true
+          sudo fatresize -s 512M "${LOOP}p1" 2>/dev/null || sudo fsck.vfat -a "${LOOP}p1" 2>/dev/null || true
+
+          # Mount
+          sudo mkdir -p /mnt/alphasound
+          sudo mount "${LOOP}p1" /mnt/alphasound
+          echo "=== Boot partition contents ==="
+          ls /mnt/alphasound/
+
+      - name: Create apkovl overlay
+        run: |
+          OVERLAY_DIR=$(mktemp -d)
+
+          # Copy overlay structure
+          cp -a overlay/etc "${OVERLAY_DIR}/"
+          echo "alphasound" > "${OVERLAY_DIR}/etc/hostname"
+
+          # APK repositories
+          mkdir -p "${OVERLAY_DIR}/etc/apk"
+          cat > "${OVERLAY_DIR}/etc/apk/repositories" << EOF
+          /media/mmcblk0p1/cache
+          https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main
+          https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community
+          EOF
+
+          # APK world (packages to auto-install at boot)
+          cat > "${OVERLAY_DIR}/etc/apk/world" << 'EOF'
+          alpine-base
+          shairport-sync
+          hostapd
+          dnsmasq
+          avahi
+          EOF
+
+          # Clean leading whitespace from heredocs
+          sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/repositories"
+          sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/world"
+
+          # APK cache symlink
+          ln -sf /media/mmcblk0p1/cache "${OVERLAY_DIR}/etc/apk/cache"
+
+          # Enable services
+          mkdir -p "${OVERLAY_DIR}/etc/runlevels/default"
+          mkdir -p "${OVERLAY_DIR}/etc/runlevels/boot"
+          for svc in networking shairport-sync avahi-daemon local; do
+            ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/default/${svc}"
+          done
+          for svc in hostname hwclock modules sysctl bootmisc syslog; do
+            ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/boot/${svc}"
+          done
+
+          chmod +x "${OVERLAY_DIR}/etc/local.d/alphasound.start"
+
+          # Pack apkovl
+          (cd "${OVERLAY_DIR}" && sudo tar czf /mnt/alphasound/alphasound.apkovl.tar.gz .)
+
+      - name: Cache packages for offline boot
+        run: |
+          sudo mkdir -p /mnt/alphasound/cache
+          docker run --rm \
+            -v /mnt/alphasound/cache:/cache \
+            alpine:${ALPINE_VERSION} \
+            sh -c "
+              apk update && \
+              apk fetch -R -o /cache \
+                alpine-base shairport-sync hostapd dnsmasq avahi
+            "
+          echo "=== Cached packages ==="
+          ls /mnt/alphasound/cache/ | head -20
+          echo "Total: $(du -sh /mnt/alphasound/cache/ | cut -f1)"
+
+      - name: Configure boot
+        run: |
+          # usercfg.txt
+          cat | sudo tee /mnt/alphasound/usercfg.txt << 'EOF'
+          gpu_mem=16
+          dtparam=audio=on
+          # dtoverlay=hifiberry-dac
+          EOF
+          sudo sed -i 's/^[[:space:]]*//' /mnt/alphasound/usercfg.txt
+
+          # Copy user config
+          sudo cp overlay/alphasound.txt /mnt/alphasound/alphasound.txt
+
+      - name: Finalise image
+        run: |
+          sudo sync
+          sudo umount /mnt/alphasound
+          sudo losetup -d "${LOOP}"
+
+          # Shrink image — truncate to actual partition size + padding
+          PART_END=$(sfdisk -l alpine-rpi.img | grep img1 | awk '{print $3}')
+          IMG_SIZE=$(( (PART_END + 1) * 512 ))
+          truncate -s "${IMG_SIZE}" alpine-rpi.img
+
+          xz -9 -T0 alpine-rpi.img
+          mv alpine-rpi.img.xz alphasound.img.xz
+
+          echo "=== Final image ==="
+          ls -lh alphasound.img.xz
 
       - name: Get date for release tag
         id: date
         run: echo "date=$(date +'%Y%m%d')" >> "$GITHUB_OUTPUT"
-
-      - name: Compress image
-        run: |
-          xz -9 -T0 ${{ steps.build.outputs.image-path }}
-          echo "COMPRESSED_IMAGE=${{ steps.build.outputs.image-path }}.xz" >> "$GITHUB_ENV"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -58,15 +155,15 @@ jobs:
           body: |
             Automated build from `main` branch.
 
-            **Shairport-sync**: built from latest development branch
-            **Base OS**: Raspberry Pi OS Lite (Trixie, arm64)
-            **Filesystem**: Read-only root with overlay
+            **Base OS**: Alpine Linux ${{ env.ALPINE_RELEASE }} (aarch64, diskless)
+            **Shairport-sync**: from Alpine community repo
+            **Filesystem**: Runs entirely from RAM — SD card is read-only by design
 
             ## Quick start
-            1. Flash the `.img.xz` file to an SD card (Raspberry Pi Imager can flash `.xz` directly)
-            2. Mount the boot partition and edit `alphasound.txt` to set your preferences
-            3. Insert SD card, power on, connect to the WiFi network, and AirPlay
-          files: ${{ env.COMPRESSED_IMAGE }}
+            1. Flash the `.img.xz` to an SD card (Raspberry Pi Imager can flash `.xz` directly)
+            2. Edit `alphasound.txt` on the SD card to set your preferences
+            3. Insert SD card, power on, connect to the WiFi network, AirPlay
+          files: alphasound.img.xz
           draft: false
           prerelease: false
         env:
