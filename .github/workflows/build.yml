@@ -36,6 +36,8 @@ jobs:
             -v "$(pwd)/cache:/out" \
             alpine:${ALPINE_VERSION} \
             sh -c "
+              echo 'https://dl-cdn.alpinelinux.org/alpine/v3.21/main' > /etc/apk/repositories && \
+              echo 'https://dl-cdn.alpinelinux.org/alpine/v3.21/community' >> /etc/apk/repositories && \
               apk update && \
               apk fetch -R -o /tmp/pkgs \
                 alpine-base shairport-sync hostapd dnsmasq avahi && \
