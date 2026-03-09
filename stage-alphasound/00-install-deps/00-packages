@@ -19,5 +19,6 @@ libplist-utils
 libavutil-dev
 libavcodec-dev
 libavformat-dev
+libsystemd-dev
 hostapd
 isc-dhcp-server
