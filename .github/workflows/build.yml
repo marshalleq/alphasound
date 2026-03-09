@@ -33,6 +33,7 @@ jobs:
           enable-ssh: 1
           extra-host-dependencies: git
           extra-host-modules: ''
+          verbose-output: true
           pi-gen-version: arm64
 
       - name: Get date for release tag
