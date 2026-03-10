@@ -1,5 +1,5 @@
 #!/bin/sh
-# alphasound-init: reads config and starts WiFi AP + AirPlay
+# alphasound-init: reads config and starts WiFi AP + AirPlay + Bluetooth
 # Runs at boot via OpenRC local.d
 
 CONFIG_FILE="/media/mmcblk0p1/alphasound.txt"
@@ -12,6 +12,7 @@ ALPHASOUND_CHANNEL="11"
 ALPHASOUND_COUNTRY="NZ"
 ALPHASOUND_OUTPUT_DEVICE="hw:0"
 ALPHASOUND_VOLUME_MAX_DB="-3.00"
+ALPHASOUND_BLUETOOTH="yes"
 ALPHASOUND_DEV_WIFI_SSID=""
 ALPHASOUND_DEV_WIFI_PASSWORD=""
 
@@ -63,6 +64,15 @@ EOF
 
     # Restart shairport-sync with new config
     rc-service shairport-sync restart
+
+    # Start Bluetooth A2DP receiver
+    if [ "$ALPHASOUND_BLUETOOTH" = "yes" ]; then
+        # Set Bluetooth adapter name to match AirPlay name
+        bluetoothctl system-alias "$ALPHASOUND_NAME"
+
+        # Start bluealsa-aplay — routes incoming A2DP audio to ALSA output
+        bluealsa-aplay --profile-a2dp -d "$ALPHASOUND_OUTPUT_DEVICE" &
+    fi
 
 else
     #

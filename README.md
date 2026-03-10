@@ -1,11 +1,12 @@
 # Alphasound
 
-A tiny Raspberry Pi image that turns your Pi into an AirPlay receiver for your car stereo. Based on [Alpine Linux](https://alpinelinux.org/) and [shairport-sync](https://github.com/mikebrady/shairport-sync).
+A tiny Raspberry Pi image that turns your Pi into an AirPlay and Bluetooth audio receiver for your car stereo. Based on [Alpine Linux](https://alpinelinux.org/), [shairport-sync](https://github.com/mikebrady/shairport-sync), and [BlueALSA](https://github.com/Arkq/bluez-alsa).
 
 ## What it does
 
 - Creates a WiFi access point with **no internet gateway** — your phone connects to it for AirPlay while cellular handles all data traffic
 - Runs [shairport-sync](https://github.com/mikebrady/shairport-sync) as an AirPlay receiver, outputting audio to a DAC connected to your car's AUX input
+- **Bluetooth A2DP** receiver for Android and other non-Apple devices — auto-pairs with no PIN
 - **Runs entirely from RAM** (Alpine diskless mode) — the SD card is never written to, so it survives hard power cuts when you turn off the ignition
 - Boots in seconds on a Pi Zero 2 W
 - Image size ~100MB compressed
@@ -26,7 +27,7 @@ A tiny Raspberry Pi image that turns your Pi into an AirPlay receiver for your c
 4. If using a HAT DAC, uncomment the overlay line in `usercfg.txt`
 5. Insert into Pi, start the car
 6. Connect to the `Alphasound` WiFi on your phone
-7. Select `Alphasound` as an AirPlay output
+7. Select `Alphasound` as an AirPlay output (Apple) or Bluetooth audio device (Android)
 
 ## Configuration
 
@@ -39,6 +40,7 @@ ALPHASOUND_CHANNEL=11
 ALPHASOUND_COUNTRY=NZ
 ALPHASOUND_OUTPUT_DEVICE=hw:0
 ALPHASOUND_VOLUME_MAX_DB=-3.00
+ALPHASOUND_BLUETOOTH=yes
 ```
 
 For DAC setup, edit `usercfg.txt`:
@@ -66,6 +68,7 @@ Alpine Linux runs in "diskless" mode — the entire OS loads into RAM at boot. A
 ## Credits
 
 - [shairport-sync](https://github.com/mikebrady/shairport-sync) by Mike Brady
+- [BlueALSA](https://github.com/Arkq/bluez-alsa) for Bluetooth A2DP audio
 - [Alpine Linux](https://alpinelinux.org/)
 
 ## License

@@ -23,6 +23,9 @@ ALPHASOUND_OUTPUT_DEVICE=hw:0
 # Max volume in dB (reduce if DAC overloads car AUX input, 0.0 = full)
 ALPHASOUND_VOLUME_MAX_DB=-3.00
 
+# Bluetooth A2DP receiver for non-Apple devices (yes/no)
+ALPHASOUND_BLUETOOTH=yes
+
 # Development mode WiFi credentials (only used when ALPHASOUND_MODE=DEV)
 ALPHASOUND_DEV_WIFI_SSID=
 ALPHASOUND_DEV_WIFI_PASSWORD=
