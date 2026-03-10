@@ -36,12 +36,11 @@ jobs:
             -v "$(pwd)/cache:/out" \
             alpine:${ALPINE_VERSION} \
             sh -c '
-              set -x
               echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories
               echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories
               apk update
               mkdir -p /tmp/pkgs
-              apk fetch -R -o /tmp/pkgs alpine-base shairport-sync hostapd dnsmasq avahi
+              apk fetch -R -o /tmp/pkgs alpine-base shairport-sync hostapd dnsmasq avahi bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc
               echo "apk fetch exit code: $?"
               ls /tmp/pkgs/ | wc -l
               cp /tmp/pkgs/*.apk /out/
@@ -125,6 +124,10 @@ jobs:
           hostapd
           dnsmasq
           avahi
+          bluez
+          bluez-alsa
+          bluez-alsa-utils
+          bluez-alsa-openrc
           WORLD
           sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/world"
 
@@ -134,7 +137,7 @@ jobs:
           # Enable services
           mkdir -p "${OVERLAY_DIR}/etc/runlevels/default"
           mkdir -p "${OVERLAY_DIR}/etc/runlevels/boot"
-          for svc in networking shairport-sync avahi-daemon local; do
+          for svc in networking shairport-sync avahi-daemon bluetooth bluez-alsa local; do
             ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/default/${svc}"
           done
           for svc in hostname hwclock modules sysctl bootmisc syslog; do
@@ -142,6 +145,7 @@ jobs:
           done
 
           chmod +x "${OVERLAY_DIR}/etc/local.d/alphasound.start"
+          chmod +x "${OVERLAY_DIR}/etc/local.d/alphasound-bt-agent.start"
 
           # Pack apkovl
           (cd "${OVERLAY_DIR}" && sudo tar czf /mnt/alphasound/alphasound.apkovl.tar.gz .)
@@ -175,6 +179,7 @@ jobs:
 
             **Base OS**: Alpine Linux ${{ env.ALPINE_RELEASE }} (aarch64, diskless)
             **Shairport-sync**: from Alpine community repo
+            **Bluetooth A2DP**: auto-pairing for non-Apple devices
             **Filesystem**: Runs entirely from RAM — SD card is read-only by design
 
             ## Quick start

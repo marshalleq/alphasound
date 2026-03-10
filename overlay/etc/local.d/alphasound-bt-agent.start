@@ -1,0 +1,24 @@
+#!/bin/sh
+# Bluetooth auto-accept agent for headless pairing
+# Uses bluetoothctl to set up NoInputNoOutput agent and make adapter discoverable
+
+# Wait for bluetoothd to be ready
+for i in $(seq 1 10); do
+    bluetoothctl show 2>/dev/null | grep -q "Powered: yes" && break
+    sleep 1
+done
+
+# Set up adapter
+bluetoothctl discoverable on
+bluetoothctl pairable on
+
+# Run agent in background — accepts all pairing requests
+bluetoothctl agent NoInputNoOutput
+bluetoothctl default-agent
+
+# Keep agent alive in background
+(while true; do
+    # Re-enable discoverable in case it gets toggled off
+    bluetoothctl discoverable on 2>/dev/null
+    sleep 60
+done) &
