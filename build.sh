@@ -41,7 +41,7 @@ cleanup() {
     echo "Cleaning up..."
     $SUDO umount "${MOUNT_DIR}" 2>/dev/null || true
     [ -n "${LOOP}" ] && $SUDO losetup -d "${LOOP}" 2>/dev/null || true
-    rm -rf "${WORK_DIR}/cache" "${WORK_DIR}/overlay" "${WORK_DIR}/alpine-extract"
+    rm -rf "${WORK_DIR}/cache" "${WORK_DIR}/keys" "${WORK_DIR}/overlay" "${WORK_DIR}/alpine-extract"
 }
 trap cleanup EXIT
 
@@ -54,21 +54,36 @@ if [ ! -f "${WORK_DIR}/${ALPINE_TARBALL}" ]; then
     curl -L -o "${WORK_DIR}/${ALPINE_TARBALL}" "${ALPINE_URL}"
 fi
 
-# --- Fetch packages for offline cache ---
-echo "Fetching packages for offline cache..."
-mkdir -p "${WORK_DIR}/cache"
+# --- Fetch packages and build signed offline repository ---
+# Without an APKINDEX in the local cache, apk at first boot has no way to
+# resolve our packages and silently falls back to the online repos — which
+# are unreachable in a car with no internet. So we build a real Alpine
+# repository: APKINDEX.tar.gz signed with a freshly-generated key, and we
+# ship the matching public key in the apkovl under /etc/apk/keys/.
+echo "Fetching packages and building signed offline repo..."
+rm -rf "${WORK_DIR}/cache" "${WORK_DIR}/keys"
+mkdir -p "${WORK_DIR}/cache" "${WORK_DIR}/keys"
 docker run --rm \
-    -v "${WORK_DIR}/cache:/out" \
+    -v "${WORK_DIR}/cache:/cache" \
+    -v "${WORK_DIR}/keys:/keys" \
+    --workdir /cache \
     "alpine:${ALPINE_VERSION}" \
     sh -c "
         echo 'https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main' > /etc/apk/repositories
         echo 'https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community' >> /etc/apk/repositories
         apk update
-        mkdir -p /tmp/pkgs
-        apk fetch -R -o /tmp/pkgs ${PACKAGES}
-        cp /tmp/pkgs/*.apk /out/
+        apk add --no-cache abuild
+        # -a: record key path in /etc/abuild.conf so abuild-sign finds it
+        # -i: install the matching public key to /etc/apk/keys (so apk in
+        #     this container would trust the index too, if we re-read it)
+        # -n: no passphrase (we need non-interactive signing)
+        abuild-keygen -a -i -n
+        apk fetch -R -o /cache ${PACKAGES}
+        apk index -o APKINDEX.tar.gz *.apk
+        abuild-sign APKINDEX.tar.gz
+        cp /etc/apk/keys/*.rsa.pub /keys/
     "
-echo "Cached $(ls "${WORK_DIR}/cache/" | wc -l) packages, $(du -sh "${WORK_DIR}/cache/" | cut -f1)"
+echo "Cached $(ls "${WORK_DIR}/cache/"*.apk | wc -l) packages, $(du -sh "${WORK_DIR}/cache/" | cut -f1)"
 
 # --- Calculate image size ---
 echo "Calculating image size..."
@@ -145,6 +160,10 @@ printf '%s\n' $PACKAGES > "${OVERLAY_DIR}/etc/apk/world"
 
 # Cache symlink so apk reads from the SD card.
 ln -sf /media/mmcblk0p1/cache "${OVERLAY_DIR}/etc/apk/cache"
+
+# Trust the signing key for our local repo so apk will install from it.
+mkdir -p "${OVERLAY_DIR}/etc/apk/keys"
+cp "${WORK_DIR}/keys/"*.rsa.pub "${OVERLAY_DIR}/etc/apk/keys/"
 
 # Runlevels.
 mkdir -p "${OVERLAY_DIR}/etc/runlevels/default" "${OVERLAY_DIR}/etc/runlevels/boot"
