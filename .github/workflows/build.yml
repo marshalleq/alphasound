@@ -44,7 +44,9 @@ jobs:
             1. Flash the `.img.xz` to an SD card (Raspberry Pi Imager can flash `.xz` directly)
             2. Edit `alphasound.txt` on the SD card to set your preferences
             3. Insert SD card, power on, connect to the WiFi network, AirPlay
-          files: deploy/alphasound.img.xz
+          files: |
+            deploy/alphasound.img.xz
+            deploy/alphasound.apkovl.tar.gz
           draft: false
           prerelease: false
         env:

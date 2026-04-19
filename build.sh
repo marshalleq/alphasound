@@ -31,7 +31,7 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
 # replaces /etc/runlevels wholesale, so if we don't list these here, they
 # won't be enabled.
 SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
-BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog"
+BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog alphasound-rollback alphasound-persist"
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
@@ -42,6 +42,11 @@ CHROOT_DIR="${WORK_DIR}/chroot"
 APKOVL_FILE="${WORK_DIR}/alphasound.apkovl.tar.gz"
 OUTPUT_DIR="${SCRIPT_DIR}/deploy"
 OUTPUT_IMAGE="${OUTPUT_DIR}/alphasound.img"
+
+# Version stamp embedded in the apkovl so the web UI can show what's
+# running. Prefer git describe if available; otherwise UTC date.
+VERSION="${ALPHASOUND_VERSION:-$(git -C "${SCRIPT_DIR}" describe --tags --always --dirty 2>/dev/null || date -u +%Y%m%d-%H%M%S)}"
+echo "Version: ${VERSION}"
 
 SUDO=""
 [ "$(id -u)" != "0" ] && SUDO="sudo"
@@ -91,9 +96,13 @@ REPOS
         # /var/lib/apk/installed populated, etc. — a complete rootfs.
         apk --root /chroot --initdb add --no-cache alpine-base ${PACKAGES}
 
-        # Apply our overlay (configs + init scripts) on top. tar pipe
-        # handles directory merging cleanly; 'cp -a' would nest dirs.
-        tar -C /overlay/etc -cf - . | tar -C /chroot/etc -xf -
+        # Apply our overlay (configs, init scripts, web UI) on top. Treat
+        # the overlay/ dir as a rootfs overlay — overlay/etc/X lands at
+        # /chroot/etc/X, overlay/var/www/X at /chroot/var/www/X, etc.
+        # alphasound.txt is excluded because it's a user-editable file
+        # that lives on the FAT32 boot partition, not in the rootfs.
+        ( cd /overlay && tar --exclude=alphasound.txt -cf - . ) \
+            | tar -C /chroot -xf -
 
         echo alphasound > /chroot/etc/hostname
 
@@ -125,8 +134,15 @@ REPOS
             ls /chroot/etc/runlevels/\$lvl
         done
 
-        # local.d scripts must be executable to run
+        # local.d scripts and our init.d services must be executable
         chmod +x /chroot/etc/local.d/*.start
+        chmod +x /chroot/etc/init.d/alphasound-*
+
+        # Web UI scripts must be executable for busybox httpd to invoke them
+        chmod +x /chroot/var/www/cgi-bin/*
+
+        # Version stamp for the web UI
+        echo '${VERSION}' > /chroot/etc/alphasound-version
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true
@@ -226,6 +242,10 @@ LOOP=""
 echo "Compressing..."
 xz -9 -T0 -f "${OUTPUT_IMAGE}"
 
+# Also publish the bare apkovl alongside the full image so on-device
+# updates can use it (web UI upload form). Much smaller than the .img.xz.
+cp "${APKOVL_FILE}" "${OUTPUT_DIR}/alphasound.apkovl.tar.gz"
+
 echo ""
 echo "=== Build complete ==="
-ls -lh "${OUTPUT_IMAGE}.xz"
+ls -lh "${OUTPUT_IMAGE}.xz" "${OUTPUT_DIR}/alphasound.apkovl.tar.gz"

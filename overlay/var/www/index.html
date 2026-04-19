@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alphasound</title>
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 1.5rem auto; padding: 0 1rem; line-height: 1.5; }
+h1 { margin: 0 0 0.25rem; }
+.sub { color: #888; font-size: 0.9rem; margin-bottom: 1.5rem; }
+section { border: 1px solid #ccc4; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+section h2 { margin-top: 0; font-size: 1.1rem; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 0.25rem 0; }
+td:last-child { text-align: right; font-family: ui-monospace, monospace; font-size: 0.95em; }
+.ok { color: #2a7a2a; }
+.fail { color: #b03a2e; }
+.muted { color: #888; }
+button { font-size: 1rem; padding: 0.6rem 1rem; border: 1px solid #888; border-radius: 6px; background: #f8f8f8; cursor: pointer; }
+button.danger { border-color: #b03a2e; color: #b03a2e; }
+input[type=file] { width: 100%; padding: 0.4rem; }
+.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+#log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.85em; background: #0001; padding: 0.5rem; border-radius: 4px; min-height: 1.2em; }
+@media (prefers-color-scheme: dark) { button { background: #2222; color: #eee; } #log { background: #fff1; } }
+</style>
+</head>
+<body>
+<h1>Alphasound</h1>
+<div class="sub" id="version">…</div>
+
+<section>
+<h2>Status</h2>
+<table id="status"><tbody><tr><td>Loading…</td></tr></tbody></table>
+</section>
+
+<section>
+<h2>Update</h2>
+<p class="muted">Pick a new <code>alphasound.apkovl.tar.gz</code>. The previous version is kept as a backup and automatically restored if the new one fails to boot 3 times.</p>
+<div class="row">
+  <input type="file" id="file" accept=".tar.gz,.gz">
+  <button id="upload">Upload &amp; reboot</button>
+</div>
+</section>
+
+<section>
+<h2>Manual actions</h2>
+<div class="row">
+  <button id="restart">Restart</button>
+  <button id="rollback" class="danger">Roll back to backup</button>
+</div>
+</section>
+
+<div id="log"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = msg => { $('log').textContent = msg; };
+
+function row(name, ok, note) {
+  const tr = document.createElement('tr');
+  const td1 = document.createElement('td');
+  td1.textContent = name;
+  const td2 = document.createElement('td');
+  if (note) {
+    td2.textContent = note;
+    td2.className = 'muted';
+  } else {
+    td2.textContent = ok ? 'OK' : 'FAIL';
+    td2.className = ok ? 'ok' : 'fail';
+  }
+  tr.appendChild(td1);
+  tr.appendChild(td2);
+  return tr;
+}
+
+async function refreshStatus() {
+  try {
+    const r = await fetch('/cgi-bin/status', { cache: 'no-store' });
+    const s = await r.json();
+    $('version').textContent = `${s.version} · uptime ${s.uptime} · ${s.ip || 'no IP'}`;
+    const tbody = document.createElement('tbody');
+    for (const [name, ok] of Object.entries(s.services)) {
+      tbody.appendChild(row(name, ok));
+    }
+    if (s.pending_update) {
+      tbody.appendChild(row('pending update', false, `attempt ${s.pending_update}/3`));
+    }
+    const table = $('status');
+    table.replaceChild(tbody, table.querySelector('tbody'));
+  } catch (e) {
+    const tbody = document.createElement('tbody');
+    tbody.appendChild(row('unreachable', false));
+    const table = $('status');
+    table.replaceChild(tbody, table.querySelector('tbody'));
+  }
+}
+
+$('upload').onclick = async () => {
+  const f = $('file').files[0];
+  if (!f) { log('pick a file first'); return; }
+  log(`uploading ${(f.size / 1024 / 1024).toFixed(1)} MB…`);
+  try {
+    const r = await fetch('/cgi-bin/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: f,
+    });
+    log(await r.text());
+  } catch (e) { log('upload failed: ' + e.message); }
+};
+
+$('restart').onclick = async () => {
+  if (!confirm('Restart now?')) return;
+  log(await (await fetch('/cgi-bin/restart', { method: 'POST' })).text());
+};
+
+$('rollback').onclick = async () => {
+  if (!confirm('Restore previous apkovl from .bak and reboot?')) return;
+  log(await (await fetch('/cgi-bin/rollback', { method: 'POST' })).text());
+};
+
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

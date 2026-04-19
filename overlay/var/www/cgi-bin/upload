@@ -1,0 +1,44 @@
+#!/bin/sh
+# Accept a raw apkovl tarball POST'd to stdin, validate, swap atomically,
+# arm the rollback flag, and reboot. The web UI sends raw bytes (not
+# multipart/form-data) so we don't need any multipart parsing in shell.
+
+set -e
+
+BOOT=/media/mmcblk0p1
+APKOVL=$BOOT/alphasound.apkovl.tar.gz
+BAK=$BOOT/alphasound.apkovl.tar.gz.bak
+TMP=/tmp/alphasound.upload.$$
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+trap 'rm -f "$TMP"' EXIT
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "POST a tarball as the request body"
+[ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || reply "411 Length Required" "missing or empty body"
+
+# Stream stdin to a temp file
+head -c "$CONTENT_LENGTH" > "$TMP"
+
+# Sanity-check it's actually a valid gzipped tar
+tar -tzf "$TMP" >/dev/null 2>&1 || reply "400 Bad Request" "uploaded file is not a valid tar.gz"
+
+# Swap
+mount -o remount,rw "$BOOT"
+mv "$APKOVL" "$BAK" 2>/dev/null || true
+mv "$TMP" "$APKOVL"
+touch "$BOOT/.boot_pending"
+rm -f "$BOOT/.boot_count"
+sync
+mount -o remount,ro "$BOOT" 2>/dev/null || true
+
+reply "200 OK" "update applied — rebooting now. Reconnect to the AP in ~30s."
+
+# Reboot in background so the response goes out first
+( sleep 1; reboot ) &

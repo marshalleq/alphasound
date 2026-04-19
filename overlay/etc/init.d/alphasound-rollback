@@ -1,0 +1,61 @@
+#!/sbin/openrc-run
+# Self-healing rollback for failed apkovl updates.
+#
+# Web upload writes /media/mmcblk0p1/.boot_pending to mark "this is a
+# new, unproven apkovl". On every boot we increment a counter. If the
+# counter exceeds the threshold (= boot tried this many times without
+# the apkovl committing success), we restore the .bak and reboot.
+#
+# alphasound.start (which runs late, after services are up) clears both
+# flags as the "boot succeeded" signal — the only way for the counter
+# NOT to climb is for a normal boot to reach that point.
+#
+# Net effect: a broken update self-heals after THRESHOLD power cycles.
+# Critical for "device installed behind the car radio" use cases where
+# pulling the SD card means tearing apart the dashboard.
+
+description="Roll back failed apkovl updates"
+
+BOOT=/media/mmcblk0p1
+PENDING=$BOOT/.boot_pending
+COUNT=$BOOT/.boot_count
+APKOVL=$BOOT/alphasound.apkovl.tar.gz
+BAK=$BOOT/alphasound.apkovl.tar.gz.bak
+THRESHOLD=3
+
+depend() {
+    need localmount
+}
+
+start() {
+    [ ! -f "$PENDING" ] && return 0
+
+    mount -o remount,rw "$BOOT"
+
+    local count=0
+    [ -f "$COUNT" ] && count=$(cat "$COUNT" 2>/dev/null || echo 0)
+    count=$((count + 1))
+    echo $count > "$COUNT"
+    sync
+
+    if [ $count -gt $THRESHOLD ]; then
+        ewarn "Pending update failed $THRESHOLD boot attempts — rolling back"
+        if [ -f "$BAK" ]; then
+            mv "$APKOVL" "$APKOVL.failed"
+            mv "$BAK" "$APKOVL"
+            rm -f "$PENDING" "$COUNT"
+            sync
+            mount -o remount,ro "$BOOT"
+            ebegin "Rebooting into previous apkovl"
+            reboot
+        else
+            ewarn "No .bak to roll back to — clearing flags"
+            rm -f "$PENDING" "$COUNT"
+        fi
+    else
+        einfo "Pending update boot attempt $count/$THRESHOLD"
+    fi
+
+    sync
+    mount -o remount,ro "$BOOT" 2>/dev/null || true
+}

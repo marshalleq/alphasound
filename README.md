@@ -69,7 +69,19 @@ Connect with:
 - `DEV` mode: `ssh root@alphasound.local` (mDNS) or use the IP from your router.
 - `RUN` mode: connect to the `Alphasound` AP and `ssh root@10.0.10.1`.
 
-Host keys regenerate every boot (RAM-only OS), so expect a "host key changed" warning each flash — clear the entry from your `known_hosts`.
+Host keys are persisted to the SD card on first boot, so subsequent boots reuse them — no "host key changed" warnings unless you re-flash.
+
+## On-device updates
+
+The device runs a minimal web UI on `http://10.0.10.1` (basic auth: `root` / `ALPHASOUND_ROOT_PASSWORD`). Once installed in a hard-to-reach spot, you can update without pulling the SD card:
+
+1. Connect a phone or laptop to the `Alphasound` WiFi
+2. Download the new `alphasound.apkovl.tar.gz` from [Releases](../../releases)
+3. Open `http://10.0.10.1/`, sign in
+4. Pick the file, hit **Upload & reboot**
+5. Wait ~30 seconds, reconnect to the AP
+
+The device keeps the previous apkovl as `.bak`. If a new apkovl fails to boot to the "ready" state 3 times in a row, an early-boot service automatically restores the backup. The web UI also exposes manual **Restart** and **Roll back to backup** buttons.
 
 ### Serial console
 
@@ -87,7 +99,7 @@ Requires Linux (loop devices + `mkfs.vfat`), plus: Docker, curl, parted, dosfsto
 
 ## How it works
 
-Alpine Linux runs in "diskless" mode — the entire OS loads into RAM at boot. An apkovl overlay applies our configuration, and packages are installed from a local cache on the SD card (no internet needed). The SD card is only read at boot, never written to, making it inherently safe for hard power cuts.
+Alpine Linux runs in "diskless" mode — the entire OS loads into RAM at boot. The build script bakes a complete rootfs (Alpine base + our packages + configs) into a single apkovl tarball, which is extracted to the in-memory rootfs at boot. The SD card boot partition only stores: the kernel + initramfs + modloop, the apkovl, and a small `persist/` directory for SSH host keys, Bluetooth pairings, and user config (`alphasound.txt`, `authorized_keys`). It's read on every boot and only written when you update or pair a new BT device.
 
 ## Credits
 

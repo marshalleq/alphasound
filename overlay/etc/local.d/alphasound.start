@@ -49,6 +49,35 @@ iw dev wlan0 set power_save off 2>/dev/null || true
 
 log() { echo "[alphasound] $*" > /dev/console; }
 
+# Persist SSH host keys + Bluetooth pairings to the SD card so they survive
+# reboots and apkovl swaps. alphasound-persist (boot runlevel) restores
+# them BEFORE sshd/bluetooth start; here we save anything generated during
+# this session. Atomic-ish: copy to a temp dir, rename into place.
+PERSIST=/media/mmcblk0p1/persist
+save_persistent_state() {
+    mount -o remount,rw /media/mmcblk0p1 2>/dev/null || return
+    mkdir -p "$PERSIST/ssh_host_keys" "$PERSIST/bluetooth"
+    cp -a /etc/ssh/ssh_host_*_key* "$PERSIST/ssh_host_keys/" 2>/dev/null
+    cp -a /var/lib/bluetooth/. "$PERSIST/bluetooth/" 2>/dev/null
+    sync
+    mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+}
+
+# Generate httpd config with the current root password as basic-auth
+# credentials, then start busybox httpd. Auth is required for everything
+# under /cgi-bin/ (the action endpoints); the static index page is open
+# but reading it needs WPA2 access to the AP anyway.
+start_web_ui() {
+    log "starting web UI on http://10.0.10.1"
+    cat > /etc/httpd.conf << EOF
+H:/var/www
+I:index.html
+/cgi-bin/:root:$ALPHASOUND_ROOT_PASSWORD
+EOF
+    chmod 600 /etc/httpd.conf
+    busybox httpd -p 0.0.0.0:80 -h /var/www -c /etc/httpd.conf
+}
+
 # Resolve "auto" to a concrete ALSA device. Picks the last card that
 # isn't the Pi's onboard 3.5mm jack ("Headphones") and figures out the
 # right PCM device suffix:
@@ -192,6 +221,25 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
         echo "  bt audio:   $(proc_ok bluealsa-aplay && echo OK || echo "FAIL (no DAC?)")"
     fi
     echo "  sshd:       $(svc_ok sshd && echo OK || echo FAIL)"
+    echo "  Web UI:     http://${WLAN_IP%/*}/"
     echo "================================================"
     echo
 } > /dev/console 2>&1
+
+# Start the web UI (after services so the status page reports accurate data)
+start_web_ui
+
+# Save state that might have been freshly generated this boot (host keys
+# on first boot, BT pairings during last session before shutdown).
+save_persistent_state
+
+# Commit the pending update if there was one — we made it through boot
+# all the way to the banner, so this apkovl is good. Clears the rollback
+# counter so future power cycles don't accidentally revert.
+if [ -f /media/mmcblk0p1/.boot_pending ]; then
+    mount -o remount,rw /media/mmcblk0p1 2>/dev/null
+    rm -f /media/mmcblk0p1/.boot_pending /media/mmcblk0p1/.boot_count
+    sync
+    mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+    log "committed pending update — boot succeeded"
+fi

@@ -1,0 +1,31 @@
+#!/bin/sh
+# Manually restore the previous apkovl from .bak and reboot. Useful when
+# the user knows an update is bad before the auto-rollback threshold hits.
+
+set -e
+
+BOOT=/media/mmcblk0p1
+APKOVL=$BOOT/alphasound.apkovl.tar.gz
+BAK=$BOOT/alphasound.apkovl.tar.gz.bak
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+[ -f "$BAK" ] || reply "404 Not Found" "no .bak to roll back to"
+
+mount -o remount,rw "$BOOT"
+mv "$APKOVL" "$APKOVL.failed"
+mv "$BAK" "$APKOVL"
+rm -f "$BOOT/.boot_pending" "$BOOT/.boot_count"
+sync
+mount -o remount,ro "$BOOT" 2>/dev/null || true
+
+reply "200 OK" "rolled back — rebooting now"
+
+( sleep 1; reboot ) &
