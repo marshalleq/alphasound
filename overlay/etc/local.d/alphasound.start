@@ -82,10 +82,9 @@ I:index.html
 EOF
     chmod 600 /etc/httpd.conf
 
-    # busybox httpd daemonises by default and is silent on success. If
-    # the applet is missing or args are wrong, it'll exit non-zero with a
-    # message on stderr — capture that so we can see why.
-    if ! busybox httpd -p 80 -h /var/www -c /etc/httpd.conf 2>/tmp/httpd.err; then
+    # httpd (from busybox-extras package) daemonises by default. Silent
+    # on success; capture stderr so we can debug if it dies.
+    if ! httpd -p 80 -h /var/www -c /etc/httpd.conf 2>/tmp/httpd.err; then
         log "httpd failed: $(cat /tmp/httpd.err 2>/dev/null)"
     fi
 }
