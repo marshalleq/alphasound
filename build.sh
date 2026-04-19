@@ -25,8 +25,15 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${
 PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc"
 
+# Runlevels: sysinit + shutdown are critical. sysinit mounts devfs and the
+# modloop squashfs (which provides /lib/modules — without this the WiFi
+# driver never loads). shutdown lets openrc tear down cleanly. Our apkovl
+# replaces /etc/runlevels wholesale, so if we don't list these here, they
+# won't be enabled.
+SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
+BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog"
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluez-alsa local sshd"
-BOOT_SVCS="hostname hwclock modules sysctl bootmisc syslog"
+SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="${SCRIPT_DIR}/.work"
@@ -91,12 +98,31 @@ REPOS
         echo alphasound > /chroot/etc/hostname
 
         # Runlevel symlinks (relative to chroot's /etc/init.d, not /chroot/etc/init.d)
-        mkdir -p /chroot/etc/runlevels/default /chroot/etc/runlevels/boot
-        for svc in ${DEFAULT_SVCS}; do
-            ln -sf /etc/init.d/\$svc /chroot/etc/runlevels/default/\$svc
+        mkdir -p /chroot/etc/runlevels/sysinit \
+                 /chroot/etc/runlevels/boot \
+                 /chroot/etc/runlevels/default \
+                 /chroot/etc/runlevels/shutdown
+        for svc in ${SYSINIT_SVCS}; do
+            ln -sf /etc/init.d/\$svc /chroot/etc/runlevels/sysinit/\$svc
         done
         for svc in ${BOOT_SVCS}; do
             ln -sf /etc/init.d/\$svc /chroot/etc/runlevels/boot/\$svc
+        done
+        for svc in ${DEFAULT_SVCS}; do
+            ln -sf /etc/init.d/\$svc /chroot/etc/runlevels/default/\$svc
+        done
+        for svc in ${SHUTDOWN_SVCS}; do
+            ln -sf /etc/init.d/\$svc /chroot/etc/runlevels/shutdown/\$svc
+        done
+
+        # Sanity check: list which init scripts actually exist so we can
+        # tell from CI logs whether any expected service is missing.
+        echo '--- /chroot/etc/init.d/ ---'
+        ls /chroot/etc/init.d/ | sort
+        echo '--- runlevels ---'
+        for lvl in sysinit boot default shutdown; do
+            echo \"[\$lvl]\"
+            ls /chroot/etc/runlevels/\$lvl
         done
 
         # local.d scripts must be executable to run
