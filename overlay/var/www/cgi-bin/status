@@ -1,0 +1,32 @@
+#!/bin/sh
+# Returns current device status as JSON for the web UI.
+
+svc() { rc-service "$1" status >/dev/null 2>&1 && echo true || echo false; }
+proc() { pgrep -x "$1" >/dev/null 2>&1 && echo true || echo false; }
+
+VERSION=$(cat /etc/alphasound-version 2>/dev/null || echo unknown)
+UPTIME=$(uptime 2>/dev/null | sed 's/^.*up *//; s/, *load.*$//; s/, *[0-9]* *user.*$//')
+IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}')
+PENDING_COUNT=$(cat /media/mmcblk0p1/.boot_count 2>/dev/null)
+[ ! -f /media/mmcblk0p1/.boot_pending ] && PENDING_COUNT=0
+PENDING_COUNT=${PENDING_COUNT:-0}
+
+cat << EOF
+Content-Type: application/json
+Cache-Control: no-store
+
+{
+  "version": "$VERSION",
+  "uptime": "$UPTIME",
+  "ip": "$IP",
+  "pending_update": $PENDING_COUNT,
+  "services": {
+    "hostapd":        $(proc hostapd),
+    "dnsmasq":        $(svc dnsmasq),
+    "shairport-sync": $(svc shairport-sync),
+    "bluetoothd":     $(svc bluetooth),
+    "bluealsad":      $(svc bluealsa),
+    "sshd":           $(svc sshd)
+  }
+}
+EOF

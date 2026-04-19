@@ -1,0 +1,35 @@
+#!/sbin/openrc-run
+# Restore SSH host keys and Bluetooth pairings from SD before the
+# services that need them start. Without this, the system regenerates
+# host keys on every boot (annoying "host key changed" warnings) and
+# loses every BT pairing on power cycle.
+#
+# The matching save logic lives in alphasound.start so we capture state
+# accumulated during the session, not just at shutdown (shutdown isn't
+# guaranteed — car ignition cuts power immediately).
+
+description="Restore persistent state from SD card"
+
+PERSIST=/media/mmcblk0p1/persist
+
+depend() {
+    need localmount
+    before sshd bluetooth
+}
+
+start() {
+    ebegin "Restoring persistent state"
+
+    if [ -d "$PERSIST/ssh_host_keys" ]; then
+        cp -a "$PERSIST/ssh_host_keys/." /etc/ssh/ 2>/dev/null
+        chmod 600 /etc/ssh/ssh_host_*_key 2>/dev/null
+        chmod 644 /etc/ssh/ssh_host_*_key.pub 2>/dev/null
+    fi
+
+    if [ -d "$PERSIST/bluetooth" ]; then
+        mkdir -p /var/lib/bluetooth
+        cp -a "$PERSIST/bluetooth/." /var/lib/bluetooth/ 2>/dev/null
+    fi
+
+    eend 0
+}
