@@ -78,7 +78,12 @@ docker run --rm \
         #     this container would trust the index too, if we re-read it)
         # -n: no passphrase (we need non-interactive signing)
         abuild-keygen -a -i -n
-        apk fetch -R -o /cache ${PACKAGES}
+        # Install our packages into the build container so apk resolves
+        # the full dep closure, then fetch every installed package into
+        # the cache. apk fetch -R alone skips deps already installed in
+        # the build container — but the Pi at boot needs them too.
+        apk add --no-cache ${PACKAGES}
+        apk info | xargs apk fetch -o /cache --no-progress
         apk index -o APKINDEX.tar.gz *.apk
         abuild-sign APKINDEX.tar.gz
         cp /etc/apk/keys/*.rsa.pub /keys/
