@@ -70,6 +70,15 @@ docker run --rm \
         echo 'https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community' >> /etc/apk/repositories
         apk update
 
+        # apk --root reads /chroot/etc/apk/{repositories,keys}, NOT the
+        # host's. So we initialise those in the chroot BEFORE installing.
+        mkdir -p /chroot/etc/apk/keys
+        cp /etc/apk/keys/* /chroot/etc/apk/keys/
+        cat > /chroot/etc/apk/repositories << REPOS
+https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main
+https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community
+REPOS
+
         # Install Alpine base + our packages into the chroot. The chroot
         # ends up with /usr/sbin/hostapd, /usr/sbin/sshd, /etc/init.d/*,
         # /var/lib/apk/installed populated, etc. — a complete rootfs.
@@ -79,12 +88,7 @@ docker run --rm \
         # handles directory merging cleanly; 'cp -a' would nest dirs.
         tar -C /overlay/etc -cf - . | tar -C /chroot/etc -xf -
 
-        # System config that's not in the overlay
         echo alphasound > /chroot/etc/hostname
-        cat > /chroot/etc/apk/repositories << REPOS
-https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main
-https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community
-REPOS
 
         # Runlevel symlinks (relative to chroot's /etc/init.d, not /chroot/etc/init.d)
         mkdir -p /chroot/etc/runlevels/default /chroot/etc/runlevels/boot
