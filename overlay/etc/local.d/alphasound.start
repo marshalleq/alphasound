@@ -17,6 +17,7 @@ ALPHASOUND_BLUETOOTH="yes"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
 ALPHASOUND_DEV_WIFI_SSID=""
 ALPHASOUND_DEV_WIFI_PASSWORD=""
+ALPHASOUND_UPDATE_REPO="marshalleq/alphasound"
 
 # Read config
 if [ -f "$CONFIG_FILE" ]; then
@@ -103,24 +104,8 @@ if [ "$ALPHASOUND_OUTPUT_DEVICE" = "auto" ]; then
     log "auto-selected output device: $ALPHASOUND_OUTPUT_DEVICE"
 fi
 
-if [ "$ALPHASOUND_MODE" = "RUN" ]; then
-    #
-    # === CAR MODE ===
-    #
-
-    log "generating hostapd config"
-    sed -e "s/%%SSID%%/$ALPHASOUND_SSID/g" \
-        -e "s/%%CHANNEL%%/$ALPHASOUND_CHANNEL/g" \
-        -e "s/%%COUNTRY%%/$ALPHASOUND_COUNTRY/g" \
-        -e "s/%%PASSPHRASE%%/$ALPHASOUND_PASSPHRASE/g" \
-        /etc/hostapd/hostapd.conf.template > /tmp/hostapd.conf
-
+write_shairport_config() {
     log "writing shairport-sync config"
-    # ignore_volume_control = "yes" because the intended use is line-out
-    # to a car AUX input — the car radio's volume knob is the volume
-    # control, and a fixed line level avoids surprises. Future: detect
-    # whether the output device has a hardware mixer (DACs do, HDMI
-    # doesn't) and conditionally enable phone volume for non-car setups.
     cat > /etc/shairport-sync.conf << EOF
 general =
 {
@@ -134,44 +119,37 @@ alsa =
     output_device = "$ALPHASOUND_OUTPUT_DEVICE";
 };
 EOF
+}
 
-    log "starting hostapd"
-    timeout 15 hostapd -B -P /run/hostapd.pid /tmp/hostapd.conf || log "hostapd failed/timed out"
+start_ap_mode() {
+    log "starting AP mode"
+
+    sed -e "s/%%SSID%%/$ALPHASOUND_SSID/g" \
+        -e "s/%%CHANNEL%%/$ALPHASOUND_CHANNEL/g" \
+        -e "s/%%COUNTRY%%/$ALPHASOUND_COUNTRY/g" \
+        -e "s/%%PASSPHRASE%%/$ALPHASOUND_PASSPHRASE/g" \
+        /etc/hostapd/hostapd.conf.template > /tmp/hostapd.conf
+
+    timeout 15 hostapd -B -P /run/hostapd.pid /tmp/hostapd.conf \
+        || log "hostapd failed/timed out"
 
     log "configuring wlan0 IP"
     ip addr add 10.0.10.1/24 dev wlan0 2>/dev/null || true
 
     log "starting dnsmasq"
     timeout 10 rc-service dnsmasq start || log "dnsmasq start failed/timed out"
+}
 
-    log "restarting shairport-sync with new config"
-    timeout 10 rc-service shairport-sync restart || log "shairport-sync restart failed/timed out"
+# Try client mode (join existing WiFi). Returns 0 on success (got IP
+# within timeout), 1 on failure. Caller is responsible for falling back.
+try_client_mode() {
+    [ -z "$ALPHASOUND_DEV_WIFI_SSID" ] && {
+        log "client mode requested but no SSID configured"
+        return 1
+    }
+    log "trying client mode (joining $ALPHASOUND_DEV_WIFI_SSID)"
 
-    # Bluetooth setup runs in the background — bluetoothctl can hang on
-    # dbus and we don't want it blocking the rest of boot. Anything we
-    # need now (AP, ssh) is already up by this point.
-    if [ "$ALPHASOUND_BLUETOOTH" = "yes" ]; then
-        log "starting bluetooth setup in background"
-        (
-            timeout 5 bluetoothctl system-alias "$ALPHASOUND_NAME" 2>&1
-            timeout 5 bluetoothctl power on 2>&1
-            timeout 5 bluetoothctl discoverable on 2>&1
-            timeout 5 bluetoothctl pairable on 2>&1
-            # Persistent auto-accept agent — feed commands then keep stdin
-            # open so bluetoothctl stays interactive and the agent stays
-            # registered.
-            (echo "agent NoInputNoOutput"; echo "default-agent"; tail -f /dev/null) | bluetoothctl &
-            bluealsa-aplay --profile-a2dp -d "$ALPHASOUND_OUTPUT_DEVICE" &
-        ) > /dev/console 2>&1 &
-    fi
-
-else
-    #
-    # === DEV MODE ===
-    #
-
-    if [ -n "$ALPHASOUND_DEV_WIFI_SSID" ]; then
-        cat > /etc/wpa_supplicant/wpa_supplicant.conf << EOF
+    cat > /etc/wpa_supplicant/wpa_supplicant.conf << EOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 country=$ALPHASOUND_COUNTRY
@@ -181,10 +159,64 @@ network={
     psk="$ALPHASOUND_DEV_WIFI_PASSWORD"
 }
 EOF
-        wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
-        udhcpc -i wlan0
+
+    wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf \
+        || { log "wpa_supplicant failed to start"; return 1; }
+
+    # Wait up to 30s for udhcpc to get a lease. -t 5 = 5 retry attempts;
+    # we wrap in timeout 30 as a hard ceiling. udhcpc exits non-zero if
+    # it gives up.
+    if timeout 30 udhcpc -i wlan0 -n -t 5 -q >/dev/null 2>&1; then
+        log "client mode got IP $(ip -4 -o addr show wlan0 | awk '{print $4}')"
+        return 0
+    fi
+
+    log "client mode failed to get IP within 30s"
+    # Tear down so AP fallback has a clean wlan0
+    pkill -x wpa_supplicant 2>/dev/null
+    pkill -x udhcpc 2>/dev/null
+    ip addr flush dev wlan0 2>/dev/null
+    sleep 1
+    return 1
+}
+
+start_bluetooth_setup() {
+    [ "$ALPHASOUND_BLUETOOTH" = "yes" ] || return 0
+    log "starting bluetooth setup in background"
+    (
+        timeout 5 bluetoothctl system-alias "$ALPHASOUND_NAME" 2>&1
+        timeout 5 bluetoothctl power on 2>&1
+        timeout 5 bluetoothctl discoverable on 2>&1
+        timeout 5 bluetoothctl pairable on 2>&1
+        (echo "agent NoInputNoOutput"; echo "default-agent"; tail -f /dev/null) | bluetoothctl &
+        bluealsa-aplay --profile-a2dp -d "$ALPHASOUND_OUTPUT_DEVICE" &
+    ) > /dev/console 2>&1 &
+}
+
+# Resolve effective mode: if user requested DEV (client) but it fails,
+# fall back to RUN (AP) so the device stays reachable. We don't change
+# the saved config — just override for this boot.
+EFFECTIVE_MODE=$ALPHASOUND_MODE
+write_shairport_config
+
+if [ "$EFFECTIVE_MODE" = "DEV" ]; then
+    if try_client_mode; then
+        :   # client mode up
+    else
+        log "falling back to AP mode for this boot"
+        EFFECTIVE_MODE=RUN
     fi
 fi
+
+if [ "$EFFECTIVE_MODE" = "RUN" ]; then
+    start_ap_mode
+fi
+
+log "restarting shairport-sync with new config"
+timeout 10 rc-service shairport-sync restart \
+    || log "shairport-sync restart failed/timed out"
+
+start_bluetooth_setup
 
 # Status banner — printed to /dev/console so it's the last thing on the
 # HDMI screen. Use rc-service status (canonical) for openrc-managed
@@ -201,9 +233,13 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
     echo "================================================"
     echo "             ALPHASOUND STATUS"
     echo "================================================"
-    echo "  Mode:       $ALPHASOUND_MODE"
+    if [ "$ALPHASOUND_MODE" = "$EFFECTIVE_MODE" ]; then
+        echo "  Mode:       $EFFECTIVE_MODE"
+    else
+        echo "  Mode:       $EFFECTIVE_MODE  (fell back from $ALPHASOUND_MODE)"
+    fi
     echo "  wlan0:      $WLAN_STATE"
-    if [ "$ALPHASOUND_MODE" = "RUN" ]; then
+    if [ "$EFFECTIVE_MODE" = "RUN" ]; then
         echo "  WiFi SSID:  $ALPHASOUND_SSID  (WPA2)"
         echo "  IP:         ${WLAN_IP:-<none>}"
         echo "  hostapd:    $(proc_ok hostapd  && echo OK || echo FAIL)"

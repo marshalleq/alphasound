@@ -1,0 +1,82 @@
+#!/bin/sh
+# Update network mode (AP <-> client) in alphasound.txt and reboot.
+#
+# Form fields (POST, application/x-www-form-urlencoded):
+#   mode          = RUN | DEV
+#   dev_ssid      = client-mode SSID (only used when mode=DEV)
+#   dev_password  = client-mode WPA passphrase
+#
+# Wrong client credentials don't brick the device — alphasound.start has
+# a 30s client-mode timeout that falls back to AP for that boot, leaving
+# the web UI reachable so the user can retry.
+
+set -e
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+DATA=$(head -c "${CONTENT_LENGTH:-0}")
+
+# URL-decode a single value. + → space, %XX → byte. POSIX-safe.
+urldecode() {
+    s=$(printf '%s' "$1" | sed 's/+/ /g')
+    printf '%b' "$(printf '%s' "$s" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x\1/g')"
+}
+
+# Pull a named field from the POST body (urlencoded form).
+field() {
+    raw=$(printf '%s' "$DATA" | tr '&' '\n' | grep "^$1=" | head -1 | cut -d= -f2-)
+    urldecode "$raw"
+}
+
+MODE=$(field mode)
+SSID=$(field dev_ssid)
+PASSWORD=$(field dev_password)
+
+case "$MODE" in
+    RUN|DEV) ;;
+    *) reply "400 Bad Request" "mode must be RUN or DEV" ;;
+esac
+
+if [ "$MODE" = "DEV" ] && [ -z "$SSID" ]; then
+    reply "400 Bad Request" "client mode (DEV) requires dev_ssid"
+fi
+
+# Update one key=value in alphasound.txt. Adds the line if missing.
+# Escapes backslash and pipe (our sed delimiter) in the value so passwords
+# with those characters don't break the rewrite.
+update_config() {
+    key=$1
+    value=$(printf '%s' "$2" | sed 's/[\\|]/\\&/g')
+    if grep -q "^${key}=" "$CONFIG"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$CONFIG"
+    else
+        printf '%s=%s\n' "$key" "$2" >> "$CONFIG"
+    fi
+}
+
+mount -o remount,rw /media/mmcblk0p1
+update_config ALPHASOUND_MODE "$MODE"
+if [ "$MODE" = "DEV" ]; then
+    update_config ALPHASOUND_DEV_WIFI_SSID "$SSID"
+    update_config ALPHASOUND_DEV_WIFI_PASSWORD "$PASSWORD"
+fi
+sync
+mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+
+if [ "$MODE" = "RUN" ]; then
+    reply "200 OK" "switched to AP mode — rebooting now"
+else
+    reply "200 OK" "switched to client mode (joining $SSID) — rebooting now. If credentials are wrong, the device falls back to AP mode automatically."
+fi
+
+( sleep 1; reboot ) &

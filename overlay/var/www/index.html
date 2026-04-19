@@ -35,8 +35,32 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 </section>
 
 <section>
-<h2>Update</h2>
-<p class="muted">Pick a new <code>alphasound.apkovl.tar.gz</code>. The previous version is kept as a backup and automatically restored if the new one fails to boot 3 times.</p>
+<h2>Network mode</h2>
+<p class="muted">Standalone broadcasts the <code>Alphasound</code> WiFi for car/portable use. Client joins an existing network — useful at home, and unlocks "Check for updates" below. Wrong client credentials fall back to AP mode automatically.</p>
+<form id="mode-form">
+  <p><label><input type="radio" name="mode" value="RUN" id="mode-run"> Standalone (AP)</label></p>
+  <p><label><input type="radio" name="mode" value="DEV" id="mode-dev"> Client (join existing WiFi)</label></p>
+  <div id="client-fields" style="margin-left: 1.5rem; display: none;">
+    <p><label>SSID <input type="text" name="dev_ssid" id="dev_ssid" autocomplete="off"></label></p>
+    <p><label>Password <input type="password" name="dev_password" id="dev_password" autocomplete="off"></label></p>
+  </div>
+  <button id="apply-mode" type="button">Apply &amp; reboot</button>
+</form>
+</section>
+
+<section>
+<h2>Update from GitHub <span class="muted" id="update-mode-note"></span></h2>
+<p class="muted">Pulls <code>alphasound.apkovl.tar.gz</code> directly from the latest release. Only works in client mode (needs internet).</p>
+<div class="row">
+  <button id="check-update">Check for updates</button>
+  <button id="pull-update" disabled>Download &amp; install</button>
+</div>
+<p id="update-status" class="muted"></p>
+</section>
+
+<section>
+<h2>Update from file</h2>
+<p class="muted">Pick a downloaded <code>alphasound.apkovl.tar.gz</code>. The previous version is kept as a backup and automatically restored if the new one fails to boot 3 times.</p>
 <div class="row">
   <input type="file" id="file" accept=".tar.gz,.gz">
   <button id="upload">Upload &amp; reboot</button>
@@ -74,6 +98,8 @@ function row(name, ok, note) {
   return tr;
 }
 
+let currentMode = null;
+
 async function refreshStatus() {
   try {
     const r = await fetch('/cgi-bin/status', { cache: 'no-store' });
@@ -88,6 +114,18 @@ async function refreshStatus() {
     }
     const table = $('status');
     table.replaceChild(tbody, table.querySelector('tbody'));
+
+    // Reflect mode in the form (only set radios on first load so we
+    // don't fight the user mid-edit).
+    if (currentMode === null && s.mode) {
+      currentMode = s.mode;
+      const radio = document.querySelector(`input[name=mode][value="${s.mode}"]`);
+      if (radio) radio.checked = true;
+      if (s.dev_ssid) $('dev_ssid').value = s.dev_ssid;
+      $('client-fields').style.display = (s.mode === 'DEV') ? '' : 'none';
+      $('update-mode-note').textContent = (s.mode === 'DEV') ? '' : '(switch to client mode first)';
+      $('check-update').disabled = (s.mode !== 'DEV');
+    }
   } catch (e) {
     const tbody = document.createElement('tbody');
     tbody.appendChild(row('unreachable', false));
@@ -95,6 +133,70 @@ async function refreshStatus() {
     table.replaceChild(tbody, table.querySelector('tbody'));
   }
 }
+
+document.querySelectorAll('input[name=mode]').forEach(r => {
+  r.addEventListener('change', e => {
+    $('client-fields').style.display = (e.target.value === 'DEV') ? '' : 'none';
+  });
+});
+
+$('apply-mode').onclick = async () => {
+  const form = $('mode-form');
+  const fd = new FormData(form);
+  const mode = fd.get('mode');
+  if (!mode) { log('pick a mode first'); return; }
+  if (mode === 'DEV' && !fd.get('dev_ssid')) { log('SSID required for client mode'); return; }
+  if (!confirm(`Switch to ${mode === 'RUN' ? 'AP' : 'client'} mode and reboot?`)) return;
+  const body = new URLSearchParams(fd).toString();
+  log('applying…');
+  try {
+    const r = await fetch('/cgi-bin/setmode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    log(await r.text());
+  } catch (e) { log('apply failed: ' + e.message); }
+};
+
+let pendingUpdateUrl = null;
+$('check-update').onclick = async () => {
+  $('update-status').textContent = 'checking…';
+  $('pull-update').disabled = true;
+  pendingUpdateUrl = null;
+  try {
+    const r = await fetch('/cgi-bin/update-check', { cache: 'no-store' });
+    const s = await r.json();
+    if (s.error) {
+      $('update-status').textContent = 'error: ' + s.error;
+      return;
+    }
+    if (s.update_available) {
+      $('update-status').textContent = `update available: ${s.current} → ${s.latest}`;
+      pendingUpdateUrl = s.url;
+      $('pull-update').disabled = false;
+    } else {
+      $('update-status').textContent = `up to date (${s.current})`;
+    }
+  } catch (e) {
+    $('update-status').textContent = 'check failed: ' + e.message;
+  }
+};
+
+$('pull-update').onclick = async () => {
+  if (!pendingUpdateUrl) return;
+  if (!confirm('Download and install the update? Device will reboot.')) return;
+  log('downloading and installing…');
+  try {
+    const body = new URLSearchParams({ url: pendingUpdateUrl }).toString();
+    const r = await fetch('/cgi-bin/update-pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    log(await r.text());
+  } catch (e) { log('install failed: ' + e.message); }
+};
 
 $('upload').onclick = async () => {
   const f = $('file').files[0];

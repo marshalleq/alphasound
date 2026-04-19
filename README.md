@@ -71,17 +71,31 @@ Connect with:
 
 Host keys are persisted to the SD card on first boot, so subsequent boots reuse them — no "host key changed" warnings unless you re-flash.
 
-## On-device updates
+## Web UI
 
-The device runs a minimal web UI on `http://10.0.10.1` (basic auth: `root` / `ALPHASOUND_ROOT_PASSWORD`). Once installed in a hard-to-reach spot, you can update without pulling the SD card:
+The device runs a minimal web UI on `http://10.0.10.1` (basic auth: `root` / `ALPHASOUND_ROOT_PASSWORD`). Once installed in a hard-to-reach spot, this is your primary admin interface:
 
-1. Connect a phone or laptop to the `Alphasound` WiFi
-2. Download the new `alphasound.apkovl.tar.gz` from [Releases](../../releases)
-3. Open `http://10.0.10.1/`, sign in
-4. Pick the file, hit **Upload & reboot**
-5. Wait ~30 seconds, reconnect to the AP
+- **Status** — version, uptime, IP, per-service health (auto-refreshes every 5s)
+- **Network mode** — switch between Standalone (AP) and Client (joins existing WiFi)
+- **Update from GitHub** — checks the Releases page and pulls the latest apkovl directly (client mode only — needs internet)
+- **Update from file** — upload an apkovl downloaded to your phone/laptop
+- **Manual actions** — Restart, Roll back to backup
 
-The device keeps the previous apkovl as `.bak`. If a new apkovl fails to boot to the "ready" state 3 times in a row, an early-boot service automatically restores the backup. The web UI also exposes manual **Restart** and **Roll back to backup** buttons.
+### Mode toggle
+
+- **Standalone (AP)** — the default. Broadcasts the `Alphasound` WPA2 network. Use this in the car.
+- **Client** — joins a WiFi network you specify. Useful at home (the device can pull updates directly), for testing, or for fixed installs where there's already a network.
+
+If client mode credentials are wrong, an early-boot check times out after 30s without a DHCP lease and falls back to AP for that boot — so a typo doesn't make the device unreachable.
+
+### Updates
+
+Two paths:
+
+1. **Pull from GitHub** (client mode): hit "Check for updates", then "Download & install" if there's a newer release.
+2. **Upload manually** (any mode): download `alphasound.apkovl.tar.gz` from [Releases](../../releases) onto your phone/laptop, then upload via the web UI.
+
+Either path keeps the previous apkovl as `.bak`. If a new apkovl fails to boot to the "ready" state 3 times in a row, an early-boot service automatically restores the backup.
 
 ### Serial console
 

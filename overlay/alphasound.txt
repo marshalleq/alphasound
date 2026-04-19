@@ -2,8 +2,14 @@
 # Edit this file on the SD card before inserting it.
 # Changes take effect on next boot.
 
-# Mode: RUN = car mode (WiFi AP), DEV = development mode (joins existing WiFi)
+# Mode: RUN = standalone AP, DEV = client mode (joins existing WiFi).
+# Can also be changed from the web UI on http://10.0.10.1/. If client
+# mode fails to get an IP within 30s the device falls back to AP mode
+# for that boot, so a wrong WiFi password doesn't brick it.
 ALPHASOUND_MODE=RUN
+
+# GitHub owner/repo for "Check for updates" in the web UI (client mode)
+ALPHASOUND_UPDATE_REPO=marshalleq/alphasound
 
 # WiFi network name (SSID) your phone connects to
 ALPHASOUND_SSID=Alphasound

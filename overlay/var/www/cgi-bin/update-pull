@@ -1,0 +1,58 @@
+#!/bin/sh
+# Download an apkovl from a URL (typically a GitHub release asset),
+# validate it, swap atomically, arm rollback, reboot. Mirrors the upload
+# CGI but pulls from a URL instead of reading the request body — useful
+# in client mode where the device has internet.
+#
+# Form field (POST, urlencoded): url=https://...alphasound.apkovl.tar.gz
+
+set -e
+
+BOOT=/media/mmcblk0p1
+APKOVL=$BOOT/alphasound.apkovl.tar.gz
+BAK=$BOOT/alphasound.apkovl.tar.gz.bak
+TMP=/tmp/alphasound.pull.$$
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+trap 'rm -f "$TMP"' EXIT
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+DATA=$(head -c "${CONTENT_LENGTH:-0}")
+URL=$(printf '%s' "$DATA" | tr '&' '\n' | grep '^url=' | head -1 | cut -d= -f2-)
+URL=$(printf '%s' "$URL" | sed 's/+/ /g')
+URL=$(printf '%b' "$(printf '%s' "$URL" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x\1/g')")
+
+# Only allow https GitHub release URLs to avoid being a generic file-grabber
+case "$URL" in
+    https://github.com/*/releases/download/*) ;;
+    https://objects.githubusercontent.com/*) ;;  # GitHub redirects assets here
+    *) reply "400 Bad Request" "URL must be a GitHub release asset" ;;
+esac
+
+if ! wget -q -T 30 -O "$TMP" "$URL"; then
+    reply "502 Bad Gateway" "download failed (no internet? wrong URL?)"
+fi
+
+if ! tar -tzf "$TMP" >/dev/null 2>&1; then
+    reply "400 Bad Request" "downloaded file is not a valid tar.gz"
+fi
+
+mount -o remount,rw "$BOOT"
+mv "$APKOVL" "$BAK" 2>/dev/null || true
+mv "$TMP" "$APKOVL"
+touch "$BOOT/.boot_pending"
+rm -f "$BOOT/.boot_count"
+sync
+mount -o remount,ro "$BOOT" 2>/dev/null || true
+
+reply "200 OK" "downloaded and applied — rebooting now. Reconnect in ~30s."
+
+( sleep 1; reboot ) &
