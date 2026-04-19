@@ -11,14 +11,26 @@ PENDING_COUNT=$(cat /media/mmcblk0p1/.boot_count 2>/dev/null)
 [ ! -f /media/mmcblk0p1/.boot_pending ] && PENDING_COUNT=0
 PENDING_COUNT=${PENDING_COUNT:-0}
 
+# Pull mode + client SSID from alphasound.txt to pre-populate the UI form.
+config_get() {
+    grep "^$1=" /media/mmcblk0p1/alphasound.txt 2>/dev/null | head -1 | cut -d= -f2-
+}
+MODE=$(config_get ALPHASOUND_MODE)
+DEV_SSID=$(config_get ALPHASOUND_DEV_WIFI_SSID)
+
+# JSON-escape: only need to handle backslash and double quote for our values.
+json_esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
 cat << EOF
 Content-Type: application/json
 Cache-Control: no-store
 
 {
-  "version": "$VERSION",
-  "uptime": "$UPTIME",
-  "ip": "$IP",
+  "version": "$(json_esc "$VERSION")",
+  "uptime": "$(json_esc "$UPTIME")",
+  "ip": "$(json_esc "$IP")",
+  "mode": "$(json_esc "$MODE")",
+  "dev_ssid": "$(json_esc "$DEV_SSID")",
   "pending_update": $PENDING_COUNT,
   "services": {
     "hostapd":        $(proc hostapd),

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Query the GitHub Releases API for the latest apkovl release.
+# Only works in client mode (we need internet). Returns JSON with the
+# latest tag, the apkovl download URL, and whether it differs from
+# what's installed.
+
+set -e
+
+REPO=$(grep '^ALPHASOUND_UPDATE_REPO=' /media/mmcblk0p1/alphasound.txt 2>/dev/null \
+       | cut -d= -f2- | head -1)
+REPO=${REPO:-marshalleq/alphasound}
+CURRENT=$(cat /etc/alphasound-version 2>/dev/null || echo unknown)
+
+reply_json() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: application/json\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+# wget with -T 10 timeout. Output to stdout. Fail closed if no network.
+JSON=$(wget -q -T 10 -O - "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null) || \
+    reply_json "503 Service Unavailable" "{\"error\":\"could not reach GitHub (no internet?)\",\"current\":\"$CURRENT\"}"
+
+# jq is in PACKAGES so this is robust.
+LATEST=$(printf '%s' "$JSON" | jq -r '.tag_name // ""')
+URL=$(printf '%s' "$JSON" | jq -r '.assets[]? | select(.name == "alphasound.apkovl.tar.gz") | .browser_download_url' | head -1)
+
+if [ -z "$LATEST" ] || [ -z "$URL" ]; then
+    reply_json "502 Bad Gateway" "{\"error\":\"release missing apkovl asset\",\"current\":\"$CURRENT\"}"
+fi
+
+UPDATE_AVAILABLE=false
+[ "$LATEST" != "$CURRENT" ] && UPDATE_AVAILABLE=true
+
+reply_json "200 OK" "{\"current\":\"$CURRENT\",\"latest\":\"$LATEST\",\"url\":\"$URL\",\"update_available\":$UPDATE_AVAILABLE}"
