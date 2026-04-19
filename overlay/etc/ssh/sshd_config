@@ -6,7 +6,6 @@
 PermitRootLogin yes
 PubkeyAuthentication yes
 PasswordAuthentication yes
-ChallengeResponseAuthentication no
-UsePAM no
+KbdInteractiveAuthentication no
 
 Subsystem sftp /usr/lib/ssh/sftp-server
