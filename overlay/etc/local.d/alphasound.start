@@ -47,19 +47,21 @@ fi
 # Disable WiFi power saving
 iw dev wlan0 set power_save off 2>/dev/null || true
 
+log() { echo "[alphasound] $*" > /dev/console; }
+
 if [ "$ALPHASOUND_MODE" = "RUN" ]; then
     #
     # === CAR MODE ===
     #
 
-    # Generate hostapd config
+    log "generating hostapd config"
     sed -e "s/%%SSID%%/$ALPHASOUND_SSID/g" \
         -e "s/%%CHANNEL%%/$ALPHASOUND_CHANNEL/g" \
         -e "s/%%COUNTRY%%/$ALPHASOUND_COUNTRY/g" \
         -e "s/%%PASSPHRASE%%/$ALPHASOUND_PASSPHRASE/g" \
         /etc/hostapd/hostapd.conf.template > /tmp/hostapd.conf
 
-    # Update shairport-sync config
+    log "writing shairport-sync config"
     cat > /etc/shairport-sync.conf << EOF
 general =
 {
@@ -74,23 +76,34 @@ alsa =
 };
 EOF
 
-    # Start WiFi access point
-    hostapd -B -P /run/hostapd.pid /tmp/hostapd.conf
-    ip addr add 10.0.10.1/24 dev wlan0
+    log "starting hostapd"
+    timeout 15 hostapd -B -P /run/hostapd.pid /tmp/hostapd.conf || log "hostapd failed/timed out"
 
-    # Start DHCP server
-    rc-service dnsmasq start
+    log "configuring wlan0 IP"
+    ip addr add 10.0.10.1/24 dev wlan0 2>/dev/null || true
 
-    # Restart shairport-sync with new config
-    rc-service shairport-sync restart
+    log "starting dnsmasq"
+    timeout 10 rc-service dnsmasq start || log "dnsmasq start failed/timed out"
 
-    # Start Bluetooth A2DP receiver
+    log "restarting shairport-sync with new config"
+    timeout 10 rc-service shairport-sync restart || log "shairport-sync restart failed/timed out"
+
+    # Bluetooth setup runs in the background — bluetoothctl can hang on
+    # dbus and we don't want it blocking the rest of boot. Anything we
+    # need now (AP, ssh) is already up by this point.
     if [ "$ALPHASOUND_BLUETOOTH" = "yes" ]; then
-        # Set Bluetooth adapter name to match AirPlay name
-        bluetoothctl system-alias "$ALPHASOUND_NAME"
-
-        # Start bluealsa-aplay — routes incoming A2DP audio to ALSA output
-        bluealsa-aplay --profile-a2dp -d "$ALPHASOUND_OUTPUT_DEVICE" &
+        log "starting bluetooth setup in background"
+        (
+            timeout 5 bluetoothctl system-alias "$ALPHASOUND_NAME" 2>&1
+            timeout 5 bluetoothctl power on 2>&1
+            timeout 5 bluetoothctl discoverable on 2>&1
+            timeout 5 bluetoothctl pairable on 2>&1
+            # Persistent auto-accept agent — feed commands then keep stdin
+            # open so bluetoothctl stays interactive and the agent stays
+            # registered.
+            (echo "agent NoInputNoOutput"; echo "default-agent"; tail -f /dev/null) | bluetoothctl &
+            bluealsa-aplay --profile-a2dp -d "$ALPHASOUND_OUTPUT_DEVICE" &
+        ) > /dev/console 2>&1 &
     fi
 
 else
