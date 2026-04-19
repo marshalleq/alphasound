@@ -19,6 +19,16 @@ start() {
         return 0
     fi
     ebegin "Installing Alphasound packages from offline cache"
-    apk add --no-network --no-progress $(cat /etc/apk/world) >/dev/console 2>&1
-    eend $?
+    # Install per-package so a single failing dep doesn't block everything
+    # — at minimum we want hostapd + dnsmasq + openssh so the AP and ssh
+    # come up and the rest can be debugged remotely.
+    failed=""
+    for pkg in $(cat /etc/apk/world); do
+        if ! apk add --no-network --no-progress "$pkg" >/dev/console 2>&1; then
+            echo "FAILED to install $pkg" >/dev/console
+            failed="$failed $pkg"
+        fi
+    done
+    [ -n "$failed" ] && echo "Some packages failed:$failed" >/dev/console
+    eend 0
 }
