@@ -8,6 +8,10 @@ ALPHASOUND_MODE=RUN
 # WiFi network name (SSID) your phone connects to
 ALPHASOUND_SSID=Alphasound
 
+# WiFi WPA2 passphrase (8-63 chars). CHANGE THIS — anyone within range
+# of the AP who knows the default can connect and reach sshd.
+ALPHASOUND_PASSPHRASE=alphasound
+
 # AirPlay device name shown on your phone
 ALPHASOUND_NAME=Alphasound
 
@@ -25,6 +29,11 @@ ALPHASOUND_VOLUME_MAX_DB=-3.00
 
 # Bluetooth A2DP receiver for non-Apple devices (yes/no)
 ALPHASOUND_BLUETOOTH=yes
+
+# SSH root password. Leave empty to disable password auth (key-only).
+# CHANGE THIS — the default is well-known and the device exposes sshd
+# on its WiFi AP.
+ALPHASOUND_ROOT_PASSWORD=alphasound
 
 # Development mode WiFi credentials (only used when ALPHASOUND_MODE=DEV)
 ALPHASOUND_DEV_WIFI_SSID=

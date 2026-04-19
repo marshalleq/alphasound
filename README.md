@@ -4,7 +4,7 @@ A tiny Raspberry Pi image that turns your Pi into an AirPlay and Bluetooth audio
 
 ## What it does
 
-- Creates a WiFi access point with **no internet gateway** — your phone connects to it for AirPlay while cellular handles all data traffic
+- Creates a **WPA2-protected** WiFi access point with **no internet gateway** — your phone connects to it for AirPlay while cellular handles all data traffic
 - Runs [shairport-sync](https://github.com/mikebrady/shairport-sync) as an AirPlay receiver, outputting audio to a DAC connected to your car's AUX input
 - **Bluetooth A2DP** receiver for Android and other non-Apple devices — auto-pairs with no PIN
 - **Runs entirely from RAM** (Alpine diskless mode) — the SD card is never written to, so it survives hard power cuts when you turn off the ignition
@@ -35,13 +35,17 @@ Edit `alphasound.txt` on the SD card:
 
 ```ini
 ALPHASOUND_SSID=Alphasound
+ALPHASOUND_PASSPHRASE=alphasound
 ALPHASOUND_NAME=Alphasound
 ALPHASOUND_CHANNEL=11
 ALPHASOUND_COUNTRY=NZ
 ALPHASOUND_OUTPUT_DEVICE=hw:0
 ALPHASOUND_VOLUME_MAX_DB=-3.00
 ALPHASOUND_BLUETOOTH=yes
+ALPHASOUND_ROOT_PASSWORD=alphasound
 ```
+
+**Change `ALPHASOUND_PASSPHRASE` and `ALPHASOUND_ROOT_PASSWORD` before driving** — both default to well-known values.
 
 For DAC setup, edit `usercfg.txt`:
 
@@ -51,7 +55,25 @@ dtoverlay=hifiberry-dac
 
 ## Development mode
 
-Set `ALPHASOUND_MODE=DEV` in `alphasound.txt` with your home WiFi credentials to SSH in for debugging.
+Set `ALPHASOUND_MODE=DEV` in `alphasound.txt` with your home WiFi credentials so the Pi joins your network instead of broadcasting its own AP.
+
+### SSH access
+
+`sshd` runs in both `RUN` and `DEV` modes. Two ways to log in as root:
+
+- **Password**: set `ALPHASOUND_ROOT_PASSWORD` in `alphasound.txt` (defaults to `alphasound`). **Change this** — the device exposes sshd on its open WiFi AP, and a known default password means anyone in range can log in.
+- **Key**: drop a file named `authorized_keys` (your public key) onto the SD card's boot partition next to `alphasound.txt`. Set `ALPHASOUND_ROOT_PASSWORD=` (empty) to lock the password and force key-only auth.
+
+Connect with:
+
+- `DEV` mode: `ssh root@alphasound.local` (mDNS) or use the IP from your router.
+- `RUN` mode: connect to the `Alphasound` AP and `ssh root@10.0.10.1`.
+
+Host keys regenerate every boot (RAM-only OS), so expect a "host key changed" warning each flash — clear the entry from your `known_hosts`.
+
+### Serial console
+
+The image enables `enable_uart=1` so a USB-TTL adapter on GPIO 14 (TX) / 15 (RX) at 115200 baud gives you a login prompt without a monitor or keyboard. Bluetooth keeps the PL011 UART, so A2DP is unaffected.
 
 ## Building
 

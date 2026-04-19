@@ -7,12 +7,14 @@ CONFIG_FILE="/media/mmcblk0p1/alphasound.txt"
 # Defaults
 ALPHASOUND_MODE="RUN"
 ALPHASOUND_SSID="Alphasound"
+ALPHASOUND_PASSPHRASE="alphasound"
 ALPHASOUND_NAME="Alphasound"
 ALPHASOUND_CHANNEL="11"
 ALPHASOUND_COUNTRY="NZ"
 ALPHASOUND_OUTPUT_DEVICE="hw:0"
 ALPHASOUND_VOLUME_MAX_DB="-3.00"
 ALPHASOUND_BLUETOOTH="yes"
+ALPHASOUND_ROOT_PASSWORD="alphasound"
 ALPHASOUND_DEV_WIFI_SSID=""
 ALPHASOUND_DEV_WIFI_PASSWORD=""
 
@@ -24,6 +26,22 @@ if [ -f "$CONFIG_FILE" ]; then
             ALPHASOUND_*) eval "$key='$value'" ;;
         esac
     done < "$CONFIG_FILE"
+fi
+
+# Install SSH authorized_keys from SD card (if present)
+SSH_KEY_FILE="/media/mmcblk0p1/authorized_keys"
+if [ -f "$SSH_KEY_FILE" ]; then
+    mkdir -p /root/.ssh
+    chmod 700 /root/.ssh
+    cp "$SSH_KEY_FILE" /root/.ssh/authorized_keys
+    chmod 600 /root/.ssh/authorized_keys
+fi
+
+# Set root password from config (empty = lock account, key-only auth)
+if [ -n "$ALPHASOUND_ROOT_PASSWORD" ]; then
+    echo "root:$ALPHASOUND_ROOT_PASSWORD" | chpasswd
+else
+    passwd -l root >/dev/null
 fi
 
 # Disable WiFi power saving
@@ -38,6 +56,7 @@ if [ "$ALPHASOUND_MODE" = "RUN" ]; then
     sed -e "s/%%SSID%%/$ALPHASOUND_SSID/g" \
         -e "s/%%CHANNEL%%/$ALPHASOUND_CHANNEL/g" \
         -e "s/%%COUNTRY%%/$ALPHASOUND_COUNTRY/g" \
+        -e "s/%%PASSPHRASE%%/$ALPHASOUND_PASSPHRASE/g" \
         /etc/hostapd/hostapd.conf.template > /tmp/hostapd.conf
 
     # Update shairport-sync config

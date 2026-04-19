@@ -1,0 +1,12 @@
+# Alphasound sshd config — root login via password or key.
+# Password is set from ALPHASOUND_ROOT_PASSWORD in alphasound.txt;
+# leave that empty to force key-only auth.
+# Drop a public key onto the SD card as `authorized_keys` to use keys.
+
+PermitRootLogin yes
+PubkeyAuthentication yes
+PasswordAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM no
+
+Subsystem sftp /usr/lib/ssh/sftp-server
