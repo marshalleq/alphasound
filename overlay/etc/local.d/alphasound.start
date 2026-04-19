@@ -116,29 +116,47 @@ fi
 
 # Status banner — printed to /dev/console so it's the last thing on the
 # HDMI screen, useful for screen-only debugging without a keyboard.
+# Distinguishes "binary not installed" (apk install failed at boot) from
+# "binary present but not running" (config error, hardware issue, etc.)
 sleep 2
-check() { pgrep -x "$1" >/dev/null && echo OK || echo FAIL; }
+status() {
+    # $1=process name, $2=binary path (absolute or just the name for $PATH)
+    if pgrep -x "$1" >/dev/null 2>&1; then
+        echo "OK"
+    elif ! command -v "$2" >/dev/null 2>&1 && [ ! -x "$2" ]; then
+        echo "MISSING"
+    else
+        echo "STOPPED"
+    fi
+}
 WLAN_IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}')
+WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' || echo "no wlan0")
+PKG_COUNT=$(apk info 2>/dev/null | wc -l)
 {
     echo
     echo "================================================"
     echo "             ALPHASOUND STATUS"
     echo "================================================"
     echo "  Mode:       $ALPHASOUND_MODE"
+    echo "  Packages:   $PKG_COUNT installed"
+    echo "  wlan0:      $WLAN_STATE"
     if [ "$ALPHASOUND_MODE" = "RUN" ]; then
         echo "  WiFi SSID:  $ALPHASOUND_SSID  (WPA2)"
         echo "  IP:         ${WLAN_IP:-<none>}"
-        echo "  hostapd:    $(check hostapd)"
-        echo "  dnsmasq:    $(check dnsmasq)"
+        echo "  hostapd:    $(status hostapd hostapd)"
+        echo "  dnsmasq:    $(status dnsmasq dnsmasq)"
     else
         echo "  Joining:    ${ALPHASOUND_DEV_WIFI_SSID:-<not set>}"
         echo "  IP:         ${WLAN_IP:-<none>}"
     fi
-    echo "  AirPlay:    $(check shairport-sync)  ($ALPHASOUND_NAME)"
+    echo "  AirPlay:    $(status shairport-sync shairport-sync)  ($ALPHASOUND_NAME)"
     if [ "$ALPHASOUND_BLUETOOTH" = "yes" ]; then
-        echo "  Bluetooth:  $(check bluealsa-aplay)"
+        echo "  Bluetooth:  $(status bluealsa-aplay bluealsa-aplay)"
     fi
-    echo "  sshd:       $(check sshd)"
+    echo "  sshd:       $(status sshd /usr/sbin/sshd)"
+    echo "================================================"
+    echo "  MISSING = package didn't install at boot"
+    echo "  STOPPED = installed but not running (config/hw issue)"
     echo "================================================"
     echo
 } > /dev/console 2>&1
