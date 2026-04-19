@@ -48,7 +48,12 @@ fi
 # Disable WiFi power saving
 iw dev wlan0 set power_save off 2>/dev/null || true
 
-log() { echo "[alphasound] $*" > /dev/console; }
+log() {
+    # Write to console (HDMI screen) AND syslog so we can debug remotely
+    # via /var/log/messages.
+    echo "[alphasound] $*" > /dev/console
+    logger -t alphasound -- "$*" 2>/dev/null
+}
 
 # Persist SSH host keys + Bluetooth pairings to the SD card so they survive
 # reboots and apkovl swaps. alphasound-persist (boot runlevel) restores
@@ -76,7 +81,13 @@ I:index.html
 /cgi-bin/:root:$ALPHASOUND_ROOT_PASSWORD
 EOF
     chmod 600 /etc/httpd.conf
-    busybox httpd -p 0.0.0.0:80 -h /var/www -c /etc/httpd.conf
+
+    # busybox httpd daemonises by default and is silent on success. If
+    # the applet is missing or args are wrong, it'll exit non-zero with a
+    # message on stderr — capture that so we can see why.
+    if ! busybox httpd -p 80 -h /var/www -c /etc/httpd.conf 2>/tmp/httpd.err; then
+        log "httpd failed: $(cat /tmp/httpd.err 2>/dev/null)"
+    fi
 }
 
 # Resolve "auto" to a concrete ALSA device. Picks the last card that
@@ -189,7 +200,7 @@ start_bluetooth_setup() {
         timeout 5 bluetoothctl discoverable on 2>&1
         timeout 5 bluetoothctl pairable on 2>&1
         (echo "agent NoInputNoOutput"; echo "default-agent"; tail -f /dev/null) | bluetoothctl &
-        bluealsa-aplay --profile-a2dp -d "$ALPHASOUND_OUTPUT_DEVICE" &
+        bluealsa-aplay --profile-a2dp --pcm="$ALPHASOUND_OUTPUT_DEVICE" &
     ) > /dev/console 2>&1 &
 }
 
@@ -250,11 +261,13 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
     fi
     echo "  AirPlay:    $(svc_ok shairport-sync && echo OK || echo FAIL)  ($ALPHASOUND_NAME)"
     if [ "$ALPHASOUND_BLUETOOTH" = "yes" ]; then
-        # bluealsa-aplay needs a real ALSA output (hw:0 = DAC). Without a
-        # DAC it's expected to fail; we still report for visibility.
-        echo "  bluetoothd: $(svc_ok bluetooth   && echo OK || echo FAIL)"
-        echo "  bluealsad:  $(svc_ok bluealsa    && echo OK || echo FAIL)"
-        echo "  bt audio:   $(proc_ok bluealsa-aplay && echo OK || echo "FAIL (no DAC?)")"
+        # bluetoothd: pairing/profiles. bluealsad: A2DP daemon.
+        # bluealsa-aplay: routes incoming A2DP audio to the ALSA output.
+        # Pairing still works even if aplay is down — you just won't hear
+        # the music until aplay is running and pointed at a working output.
+        echo "  bluetoothd: $(svc_ok bluetooth      && echo OK || echo FAIL)  (pairing)"
+        echo "  bluealsad:  $(svc_ok bluealsa       && echo OK || echo FAIL)  (A2DP profile)"
+        echo "  bt-aplay:   $(proc_ok bluealsa-aplay && echo OK || echo FAIL)  (audio routing → $ALPHASOUND_OUTPUT_DEVICE)"
     fi
     echo "  sshd:       $(svc_ok sshd && echo OK || echo FAIL)"
     echo "  Web UI:     http://${WLAN_IP%/*}/"
