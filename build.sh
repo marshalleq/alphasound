@@ -107,23 +107,21 @@ REPOS
     "
 
 # --- Pack the chroot as the apkovl ---
-# Exclude modloop-managed paths and runtime-mount points. /lib/modules in
-# particular is set up at boot by Alpine's diskless init from the modloop
-# squashfs — if our apkovl plants an empty directory there, modprobe
-# breaks and the WiFi driver never loads.
+# Only include directories that genuinely need overriding. Crucially we
+# do NOT include /lib, /sbin, /bin: in modern Alpine these are symlinks
+# to /usr/lib, /usr/sbin, /usr/bin (merged-/usr), and the modloop sets
+# them up at boot. Overlaying our chroot's versions on top breaks the
+# modloop's /lib/modules setup, which kills modprobe, which kills the
+# brcmfmac WiFi driver, which kills hostapd. Our binaries/libraries
+# already live under /usr/* in the chroot so they reach the running
+# system that way.
 echo "Packing apkovl from chroot..."
 $SUDO tar czf "${APKOVL_FILE}" \
-    --exclude='./lib/modules' \
-    --exclude='./lib/firmware' \
-    --exclude='./boot' \
-    --exclude='./dev/*' \
-    --exclude='./proc/*' \
-    --exclude='./sys/*' \
-    --exclude='./run/*' \
-    --exclude='./tmp/*' \
-    --exclude='./media/*' \
-    --exclude='./mnt/*' \
-    -C "${CHROOT_DIR}" .
+    --exclude='var/cache' \
+    --exclude='var/log' \
+    --exclude='var/tmp' \
+    -C "${CHROOT_DIR}" \
+    etc usr var root
 APKOVL_SIZE=$(du -sb "${APKOVL_FILE}" | cut -f1)
 echo "apkovl size: $(du -sh "${APKOVL_FILE}" | cut -f1)"
 
