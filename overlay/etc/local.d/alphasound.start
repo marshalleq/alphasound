@@ -113,3 +113,32 @@ EOF
         udhcpc -i wlan0
     fi
 fi
+
+# Status banner — printed to /dev/console so it's the last thing on the
+# HDMI screen, useful for screen-only debugging without a keyboard.
+sleep 2
+check() { pgrep -x "$1" >/dev/null && echo OK || echo FAIL; }
+WLAN_IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}')
+{
+    echo
+    echo "================================================"
+    echo "             ALPHASOUND STATUS"
+    echo "================================================"
+    echo "  Mode:       $ALPHASOUND_MODE"
+    if [ "$ALPHASOUND_MODE" = "RUN" ]; then
+        echo "  WiFi SSID:  $ALPHASOUND_SSID  (WPA2)"
+        echo "  IP:         ${WLAN_IP:-<none>}"
+        echo "  hostapd:    $(check hostapd)"
+        echo "  dnsmasq:    $(check dnsmasq)"
+    else
+        echo "  Joining:    ${ALPHASOUND_DEV_WIFI_SSID:-<not set>}"
+        echo "  IP:         ${WLAN_IP:-<none>}"
+    fi
+    echo "  AirPlay:    $(check shairport-sync)  ($ALPHASOUND_NAME)"
+    if [ "$ALPHASOUND_BLUETOOTH" = "yes" ]; then
+        echo "  Bluetooth:  $(check bluealsa-aplay)"
+    fi
+    echo "  sshd:       $(check sshd)"
+    echo "================================================"
+    echo
+} > /dev/console 2>&1
