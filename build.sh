@@ -150,21 +150,21 @@ REPOS
     "
 
 # --- Pack the chroot as the apkovl ---
-# Only include directories that genuinely need overriding. Crucially we
-# do NOT include /lib, /sbin, /bin: in modern Alpine these are symlinks
-# to /usr/lib, /usr/sbin, /usr/bin (merged-/usr), and the modloop sets
-# them up at boot. Overlaying our chroot's versions on top breaks the
-# modloop's /lib/modules setup, which kills modprobe, which kills the
-# brcmfmac WiFi driver, which kills hostapd. Our binaries/libraries
-# already live under /usr/* in the chroot so they reach the running
-# system that way.
+# Include everything needed for binaries to resolve. Alpine RPi's modloop
+# has /bin /sbin /lib as REAL directories (not merged-/usr symlinks), so
+# any package that installs to those paths (notably busybox-extras at
+# /bin/busybox-extras) needs them shipped. We DO need to skip the
+# modloop-managed paths inside /lib (kernel modules + firmware) so we
+# don't clobber what initramfs sets up at boot.
 echo "Packing apkovl from chroot..."
 $SUDO tar czf "${APKOVL_FILE}" \
     --exclude='var/cache' \
     --exclude='var/log' \
     --exclude='var/tmp' \
+    --exclude='lib/modules' \
+    --exclude='lib/firmware' \
     -C "${CHROOT_DIR}" \
-    etc usr var root
+    etc usr var root bin sbin lib
 APKOVL_SIZE=$(du -sb "${APKOVL_FILE}" | cut -f1)
 echo "apkovl size: $(du -sh "${APKOVL_FILE}" | cut -f1)"
 
