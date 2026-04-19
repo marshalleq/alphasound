@@ -32,7 +32,7 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
 # won't be enabled.
 SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
 BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog"
-DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluez-alsa local sshd"
+DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
