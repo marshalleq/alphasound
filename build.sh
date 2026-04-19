@@ -17,7 +17,7 @@ MOUNT_DIR="${WORK_DIR}/mnt"
 OUTPUT_DIR="${SCRIPT_DIR}/deploy"
 OUTPUT_IMAGE="${OUTPUT_DIR}/alphasound.img"
 
-REQUIRED_PKGS="shairport-sync hostapd dnsmasq avahi"
+REQUIRED_PKGS="shairport-sync hostapd dnsmasq avahi openssh"
 
 cleanup() {
     echo "Cleaning up..."
@@ -76,6 +76,7 @@ mkdir -p "${OVERLAY_DIR}/etc/dnsmasq.d"
 mkdir -p "${OVERLAY_DIR}/etc/local.d"
 mkdir -p "${OVERLAY_DIR}/etc/runlevels/default"
 mkdir -p "${OVERLAY_DIR}/etc/conf.d"
+mkdir -p "${OVERLAY_DIR}/etc/ssh"
 
 # Hostname
 echo "alphasound" > "${OVERLAY_DIR}/etc/hostname"
@@ -94,6 +95,7 @@ shairport-sync
 hostapd
 dnsmasq
 avahi
+openssh
 EOF
 
 # APK cache symlink (points to boot partition)
@@ -116,8 +118,12 @@ cp "${SCRIPT_DIR}/overlay/etc/local.d/alphasound.start" \
    "${OVERLAY_DIR}/etc/local.d/alphasound.start"
 chmod +x "${OVERLAY_DIR}/etc/local.d/alphasound.start"
 
+# sshd config — key-only root login
+cp "${SCRIPT_DIR}/overlay/etc/ssh/sshd_config" \
+   "${OVERLAY_DIR}/etc/ssh/sshd_config"
+
 # Enable services via runlevel symlinks
-for svc in networking shairport-sync avahi-daemon local; do
+for svc in networking shairport-sync avahi-daemon local sshd; do
     ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/default/${svc}"
 done
 # Boot services
@@ -164,6 +170,11 @@ gpu_mem=16
 
 # Enable audio
 dtparam=audio=on
+
+# Serial console for debugging on GPIO 14 (TX) / 15 (RX) at 115200 baud.
+# On Pi 3/Zero 2 W this exposes the mini UART (ttyS0); the PL011 stays
+# wired to Bluetooth so A2DP is unaffected.
+enable_uart=1
 
 # DAC overlay (uncomment and change for your DAC)
 # dtoverlay=hifiberry-dac
