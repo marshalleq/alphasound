@@ -24,7 +24,7 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${
 
 PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils \
-          wpa_supplicant jq"
+          wpa_supplicant jq busybox-extras"
 
 # Runlevels: sysinit + shutdown are critical. sysinit mounts devfs and the
 # modloop squashfs (which provides /lib/modules — without this the WiFi
