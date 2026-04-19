@@ -199,6 +199,12 @@ dtparam=audio=on
 # unaffected.
 enable_uart=1
 
+# HDMI audio: force HDMI mode (not DVI) so audio is sent over the cable,
+# and force hotplug so a monitor with multiple inputs (or no monitor)
+# doesn't trick the firmware into thinking there's no display.
+hdmi_drive=2
+hdmi_force_hotplug=1
+
 # DAC overlay (uncomment and change for your DAC)
 # dtoverlay=hifiberry-dac
 EOF
