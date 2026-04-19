@@ -1,0 +1,5 @@
+auto lo
+iface lo inet loopback
+
+# wlan0 is intentionally not configured here — alphasound.start brings it
+# up directly via hostapd (RUN mode) or wpa_supplicant + udhcpc (DEV mode).
