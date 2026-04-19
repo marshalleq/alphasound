@@ -11,7 +11,7 @@ ALPHASOUND_PASSPHRASE="alphasound"
 ALPHASOUND_NAME="Alphasound"
 ALPHASOUND_CHANNEL="11"
 ALPHASOUND_COUNTRY="NZ"
-ALPHASOUND_OUTPUT_DEVICE="hw:0"
+ALPHASOUND_OUTPUT_DEVICE="auto"
 ALPHASOUND_VOLUME_MAX_DB="-3.00"
 ALPHASOUND_BLUETOOTH="yes"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
@@ -48,6 +48,20 @@ fi
 iw dev wlan0 set power_save off 2>/dev/null || true
 
 log() { echo "[alphasound] $*" > /dev/console; }
+
+# Resolve "auto" to a concrete ALSA device. Picks the last card that isn't
+# the Pi's onboard 3.5mm jack ("Headphones"); falls back to hw:0 if that's
+# all there is. Pi onboard analog is noisy and undesirable, so any USB or
+# HAT DAC wins. Run `aplay -l` to see what the kernel detected.
+if [ "$ALPHASOUND_OUTPUT_DEVICE" = "auto" ]; then
+    PICK=$(awk '/^ *[0-9]+ \[/ && !/Headphones/{ sub(/ /, "", $1); n=$1 } END{ print n }' /proc/asound/cards 2>/dev/null)
+    if [ -n "$PICK" ]; then
+        ALPHASOUND_OUTPUT_DEVICE="hw:$PICK"
+    else
+        ALPHASOUND_OUTPUT_DEVICE="hw:0"
+    fi
+    log "auto-selected output device: $ALPHASOUND_OUTPUT_DEVICE"
+fi
 
 if [ "$ALPHASOUND_MODE" = "RUN" ]; then
     #
