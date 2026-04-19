@@ -25,7 +25,7 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc"
 
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluez-alsa local sshd"
-BOOT_SVCS="hostname hwclock modules sysctl bootmisc syslog"
+BOOT_SVCS="hostname hwclock modules sysctl bootmisc syslog alphasound-install"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="${SCRIPT_DIR}/.work"
@@ -174,8 +174,9 @@ for svc in $BOOT_SVCS; do
     ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/boot/${svc}"
 done
 
-# local.d scripts must be executable to run.
+# local.d scripts and init.d services must be executable to run.
 chmod +x "${OVERLAY_DIR}/etc/local.d/"*.start
+chmod +x "${OVERLAY_DIR}/etc/init.d/"*
 
 (cd "${OVERLAY_DIR}" && $SUDO tar czf "${MOUNT_DIR}/alphasound.apkovl.tar.gz" .)
 
