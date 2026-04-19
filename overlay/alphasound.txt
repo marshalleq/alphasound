@@ -21,8 +21,15 @@ ALPHASOUND_CHANNEL=11
 # Country code for WiFi regulatory domain (e.g. NZ, US, GB, IE, AU)
 ALPHASOUND_COUNTRY=NZ
 
-# ALSA output device — "hw:0" for HAT DAC, "hw:1" for USB DAC
-ALPHASOUND_OUTPUT_DEVICE=hw:0
+# ALSA output device. "auto" picks the first non-built-in card it finds
+# (USB DAC, HAT DAC, etc.) and falls back to hw:0 if none. Override with a
+# specific value if the auto pick is wrong:
+#   hw:0                      Pi onboard 3.5mm or HAT DAC at card 0
+#   hw:1                      USB DAC (typical when also using onboard)
+#   hw:CARD=USB               USB DAC by name (resilient to renumbering)
+#   hw:CARD=sndrpihifiberry   HiFiBerry HAT DAC by name
+# Run `aplay -l` over SSH to see what the kernel detected.
+ALPHASOUND_OUTPUT_DEVICE=auto
 
 # Max volume in dB (reduce if DAC overloads car AUX input, 0.0 = full)
 ALPHASOUND_VOLUME_MAX_DB=-3.00

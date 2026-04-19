@@ -23,7 +23,7 @@ ALPINE_TARBALL="alpine-rpi-${ALPINE_RELEASE}-${ALPINE_ARCH}.tar.gz"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${ALPINE_ARCH}/${ALPINE_TARBALL}"
 
 PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
-          bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc"
+          bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils"
 
 # Runlevels: sysinit + shutdown are critical. sysinit mounts devfs and the
 # modloop squashfs (which provides /lib/modules — without this the WiFi
