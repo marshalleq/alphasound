@@ -10,10 +10,6 @@ on:
 permissions:
   contents: write
 
-env:
-  ALPINE_VERSION: "3.21"
-  ALPINE_RELEASE: "3.21.6"
-
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
@@ -21,149 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl mtools
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl
 
-      - name: Download Alpine RPi tarball
-        run: |
-          curl -L -o alpine-rpi.tar.gz \
-            "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/alpine-rpi-${ALPINE_RELEASE}-aarch64.tar.gz"
-
-      - name: Fetch packages for offline cache
-        run: |
-          mkdir -p cache
-          docker run --rm \
-            -v "$(pwd)/cache:/out" \
-            alpine:${ALPINE_VERSION} \
-            sh -c '
-              echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories
-              echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories
-              apk update
-              mkdir -p /tmp/pkgs
-              apk fetch -R -o /tmp/pkgs alpine-base shairport-sync hostapd dnsmasq avahi bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc
-              echo "apk fetch exit code: $?"
-              ls /tmp/pkgs/ | wc -l
-              cp /tmp/pkgs/*.apk /out/
-              echo "cp exit code: $?"
-              ls /out/ | wc -l
-            '
-          echo "=== Cached packages ==="
-          ls cache/ | wc -l
-          echo "packages"
-          du -sh cache/
-
-      - name: Create disk image
-        run: |
-          # Calculate needed size from actual uncompressed content
-          mkdir -p /tmp/alpine-size
-          tar tzf alpine-rpi.tar.gz | head -1 > /dev/null  # validate tarball
-          TARBALL_SIZE=$(tar xzf alpine-rpi.tar.gz -C /tmp/alpine-size && du -sb /tmp/alpine-size | cut -f1)
-          rm -rf /tmp/alpine-size
-          CACHE_SIZE=$(du -sb cache/ | cut -f1)
-          # Add 32MB headroom for FAT32 overhead and apkovl
-          IMG_SIZE=$(( (TARBALL_SIZE + CACHE_SIZE + 32*1024*1024) / 1024 / 1024 + 1 ))
-          echo "Image size: ${IMG_SIZE}MB"
-
-          # Create image with single FAT32 partition
-          dd if=/dev/zero of=alphasound.img bs=1M count=${IMG_SIZE}
-          parted -s alphasound.img mklabel msdos
-          parted -s alphasound.img mkpart primary fat32 1MiB 100%
-          parted -s alphasound.img set 1 boot on
-          parted -s alphasound.img set 1 lba on
-
-          # Format FAT32
-          sudo losetup -fP alphasound.img
-          LOOP=$(losetup -j alphasound.img | cut -d: -f1)
-          echo "LOOP=${LOOP}" >> "$GITHUB_ENV"
-          sudo mkfs.vfat -F 32 "${LOOP}p1"
-
-          # Mount
-          sudo mkdir -p /mnt/alphasound
-          sudo mount "${LOOP}p1" /mnt/alphasound
-
-      - name: Populate image
-        run: |
-          # Extract Alpine boot files
-          sudo tar xzf alpine-rpi.tar.gz -C /mnt/alphasound/
-
-          # Copy package cache
-          sudo cp -r cache /mnt/alphasound/cache
-
-          # usercfg.txt for RPi config
-          sudo tee /mnt/alphasound/usercfg.txt > /dev/null << 'EOF'
-          gpu_mem=16
-          dtparam=audio=on
-          # dtoverlay=hifiberry-dac
-          EOF
-          sudo sed -i 's/^[[:space:]]*//' /mnt/alphasound/usercfg.txt
-
-          # Copy user config file
-          sudo cp overlay/alphasound.txt /mnt/alphasound/alphasound.txt
-
-      - name: Create apkovl overlay
-        run: |
-          OVERLAY_DIR=$(mktemp -d)
-
-          # Copy our overlay config files
-          cp -a overlay/etc "${OVERLAY_DIR}/"
-          echo "alphasound" > "${OVERLAY_DIR}/etc/hostname"
-
-          # APK repositories
-          mkdir -p "${OVERLAY_DIR}/etc/apk"
-          cat > "${OVERLAY_DIR}/etc/apk/repositories" << REPOS
-          /media/mmcblk0p1/cache
-          https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main
-          https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community
-          REPOS
-          sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/repositories"
-
-          # APK world (packages to auto-install at boot)
-          cat > "${OVERLAY_DIR}/etc/apk/world" << 'WORLD'
-          alpine-base
-          shairport-sync
-          hostapd
-          dnsmasq
-          avahi
-          bluez
-          bluez-alsa
-          bluez-alsa-utils
-          bluez-alsa-openrc
-          WORLD
-          sed -i 's/^[[:space:]]*//' "${OVERLAY_DIR}/etc/apk/world"
-
-          # APK cache symlink to boot partition
-          ln -sf /media/mmcblk0p1/cache "${OVERLAY_DIR}/etc/apk/cache"
-
-          # Enable services
-          mkdir -p "${OVERLAY_DIR}/etc/runlevels/default"
-          mkdir -p "${OVERLAY_DIR}/etc/runlevels/boot"
-          for svc in networking shairport-sync avahi-daemon bluetooth bluez-alsa local; do
-            ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/default/${svc}"
-          done
-          for svc in hostname hwclock modules sysctl bootmisc syslog; do
-            ln -sf "/etc/init.d/${svc}" "${OVERLAY_DIR}/etc/runlevels/boot/${svc}"
-          done
-
-          chmod +x "${OVERLAY_DIR}/etc/local.d/alphasound.start"
-          chmod +x "${OVERLAY_DIR}/etc/local.d/alphasound-bt-agent.start"
-
-          # Pack apkovl
-          (cd "${OVERLAY_DIR}" && sudo tar czf /mnt/alphasound/alphasound.apkovl.tar.gz .)
-
-          echo "=== Image contents ==="
-          ls -lh /mnt/alphasound/
-          echo "Total used: $(du -sh /mnt/alphasound/ | cut -f1)"
-
-      - name: Finalise image
-        run: |
-          sudo sync
-          sudo umount /mnt/alphasound
-          sudo losetup -d "${LOOP}"
-
-          xz -9 -T0 alphasound.img
-
-          echo "=== Final image ==="
-          ls -lh alphasound.img.xz
+      - name: Build image
+        run: ./build.sh
 
       - name: Get date for release tag
         id: date
@@ -177,7 +35,7 @@ jobs:
           body: |
             Automated build from `main` branch.
 
-            **Base OS**: Alpine Linux ${{ env.ALPINE_RELEASE }} (aarch64, diskless)
+            **Base OS**: Alpine Linux 3.21 (aarch64, diskless)
             **Shairport-sync**: from Alpine community repo
             **Bluetooth A2DP**: auto-pairing for non-Apple devices
             **Filesystem**: Runs entirely from RAM — SD card is read-only by design
@@ -186,7 +44,7 @@ jobs:
             1. Flash the `.img.xz` to an SD card (Raspberry Pi Imager can flash `.xz` directly)
             2. Edit `alphasound.txt` on the SD card to set your preferences
             3. Insert SD card, power on, connect to the WiFi network, AirPlay
-          files: alphasound.img.xz
+          files: deploy/alphasound.img.xz
           draft: false
           prerelease: false
         env:

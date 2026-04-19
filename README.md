@@ -81,7 +81,9 @@ The image enables `enable_uart=1` so a USB-TTL adapter on GPIO 14 (TX) / 15 (RX)
 ./build.sh
 ```
 
-Requires: Docker, curl, losetup, parted, xz
+Requires Linux (loop devices + `mkfs.vfat`), plus: Docker, curl, parted, dosfstools, xz-utils. Runs sudo for `losetup`/`mount`. Output lands in `deploy/alphasound.img.xz`.
+
+`build.sh` is the single source of truth for image builds. The GitHub Actions release workflow (`.github/workflows/build.yml`) just installs the dependencies and runs `./build.sh` — so what you build locally matches what gets released. Don't add inline build logic to the workflow; put it in `build.sh`.
 
 ## How it works
 
