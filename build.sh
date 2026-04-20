@@ -24,7 +24,8 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${
 
 PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils \
-          wpa_supplicant jq busybox-extras"
+          wpa_supplicant jq busybox-extras \
+          python3 py3-pillow py3-numpy py3-spidev py3-libgpiod font-noto"
 
 # Runlevels: sysinit + shutdown are critical. sysinit mounts devfs and the
 # modloop squashfs (which provides /lib/modules — without this the WiFi
@@ -240,8 +241,24 @@ enable_uart=1
 hdmi_drive=2
 hdmi_force_hotplug=1
 
-# DAC overlay (uncomment and change for your DAC)
-# dtoverlay=hifiberry-dac
+# Enable SPI bus — required for the Pimoroni Pirate Audio LCD (and other
+# SPI-attached displays). Harmless if you don't have one.
+dtparam=spi=on
+
+# DAC overlay — uncomment ONE line matching your audio hardware. Without
+# any of these, audio comes out the Pi's HDMI (auto-detected). With one
+# enabled, the DAC takes over as the primary audio device.
+#
+# dtoverlay=hifiberry-dac           # HiFiBerry DAC, Pirate Audio (all variants), IQaudIO Pi-DAC, JustBoom DAC HAT
+# dtoverlay=hifiberry-dacplus       # HiFiBerry DAC+, DAC+ Pro, DAC+ Light, DAC+ Zero, DAC+ RTC, MiniAmp, Beocreate
+# dtoverlay=hifiberry-dacplushd     # HiFiBerry DAC2 HD
+# dtoverlay=hifiberry-digi          # HiFiBerry Digi+ (S/PDIF)
+# dtoverlay=hifiberry-amp           # HiFiBerry Amp+, Amp2
+# dtoverlay=iqaudio-dacplus         # IQaudIO DAC+, DAC+ Zero
+# dtoverlay=iqaudio-digi-wm8804-audio  # IQaudIO Digi
+# dtoverlay=allo-boss-dac-pcm512x-audio # Allo Boss DAC
+# dtoverlay=audioinjector-wm8731-audio  # Audio Injector Stereo
+# dtoverlay=googlevoicehat-soundcard    # Google AIY Voice HAT
 EOF
 
 # User-editable config lands at the SD card root.

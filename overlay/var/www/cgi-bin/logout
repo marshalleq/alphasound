@@ -1,0 +1,13 @@
+#!/bin/sh
+# Invalidate the current session and clear the cookie.
+
+SESSION_DIR=/tmp/alphasound-sessions
+
+token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' \
+    | grep -oE 'alphasound=[a-fA-F0-9]+' | head -1 | cut -d= -f2)
+[ -n "$token" ] && rm -f "$SESSION_DIR/$token"
+
+printf 'Status: 200 OK\r\n'
+printf 'Set-Cookie: alphasound=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict\r\n'
+printf 'Content-Type: text/plain\r\n\r\n'
+printf 'logged out\n'

@@ -6,6 +6,9 @@
 #
 # Form field (POST, urlencoded): url=https://...alphasound.apkovl.tar.gz
 
+. /etc/alphasound/session.sh
+require_session
+
 set -e
 
 BOOT=/media/mmcblk0p1
