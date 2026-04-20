@@ -145,11 +145,14 @@ REPOS
         # busybox-extras puts its binary at /bin/busybox-extras and creates
         # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
         # ship /bin in the apkovl (clobbers modloop), so move the binary
-        # to /usr/bin and repoint every dangling symlink. find handles
-        # all the applets the package installs (httpd, telnetd, etc).
+        # to /usr/bin and repoint every applet symlink. busybox find lacks
+        # -lname so we walk and use readlink instead.
         if [ -f /chroot/bin/busybox-extras ]; then
             mv /chroot/bin/busybox-extras /chroot/usr/bin/busybox-extras
-            find /chroot/usr -lname '/bin/busybox-extras' -exec ln -sf /usr/bin/busybox-extras {} \;
+            find /chroot/usr -type l | while read -r f; do
+                [ \"\$(readlink \"\$f\")\" = '/bin/busybox-extras' ] \
+                    && ln -sf /usr/bin/busybox-extras \"\$f\"
+            done
         fi
 
         # Version stamp for the web UI
