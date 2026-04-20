@@ -1,0 +1,26 @@
+#!/bin/sh
+# Remove the persisted Roon Bridge tarball + saved Roon identity from SD.
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+PERSIST=/media/mmcblk0p1/persist
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+mount -o remount,rw /media/mmcblk0p1
+rm -rf "$PERSIST/roon" "$PERSIST/roon-data"
+sync
+mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+
+reply "200 OK" "Roon Bridge uninstalled (binary + saved identity removed). Reboot to take effect."

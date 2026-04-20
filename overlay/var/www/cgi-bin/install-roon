@@ -1,0 +1,47 @@
+#!/bin/sh
+# Download Roon Bridge from Roon's CDN and persist to SD. Only works when
+# the device is in client mode (we need internet). Doesn't extract — that
+# happens at boot when ALPHASOUND_ROON=yes.
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+URL="http://download.roonlabs.com/builds/RoonBridge_linuxarmv8.tar.bz2"
+PERSIST=/media/mmcblk0p1/persist/roon
+TMP=/tmp/roonbridge.tar.bz2
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+trap 'rm -f "$TMP"' EXIT
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+if ! ip route show default | grep -q .; then
+    reply "503 Service Unavailable" "no internet route — switch to client mode first, then retry"
+fi
+
+if ! wget -q -T 120 -O "$TMP" "$URL"; then
+    reply "502 Bad Gateway" "download failed (Roon CDN unreachable?)"
+fi
+
+# bzip2 -t verifies the bz2 stream; tar -t inside verifies the archive
+if ! bzip2 -dc "$TMP" 2>/dev/null | tar -t >/dev/null 2>&1; then
+    reply "400 Bad Request" "downloaded file is not a valid bz2 tarball"
+fi
+
+mount -o remount,rw /media/mmcblk0p1
+mkdir -p "$PERSIST"
+mv "$TMP" "$PERSIST/RoonBridge.tar.bz2"
+sync
+mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+
+SIZE=$(du -h "$PERSIST/RoonBridge.tar.bz2" | cut -f1)
+reply "200 OK" "Roon Bridge installed ($SIZE on SD). Enable it under Features and reboot to start."
