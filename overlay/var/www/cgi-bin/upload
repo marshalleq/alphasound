@@ -32,6 +32,10 @@ head -c "$CONTENT_LENGTH" > "$TMP"
 # Sanity-check it's actually a valid gzipped tar
 tar -tzf "$TMP" >/dev/null 2>&1 || reply "400 Bad Request" "uploaded file is not a valid tar.gz"
 
+# Refuse apkovls built against a different Alpine major version
+. /etc/alphasound/apkovl-check.sh
+check_apkovl_compat "$TMP"
+
 # Swap
 mount -o remount,rw "$BOOT"
 mv "$APKOVL" "$BAK" 2>/dev/null || true

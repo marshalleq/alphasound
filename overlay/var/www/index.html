@@ -48,6 +48,26 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 </section>
 
 <section>
+<h2>Features</h2>
+<p class="muted">Disable what you don't use to shave seconds off boot. Reboots after applying.</p>
+<form id="features-form">
+  <p><label><input type="checkbox" name="bluetooth" id="feat_bt" value="yes"> Bluetooth A2DP receiver</label></p>
+  <p><label><input type="checkbox" name="sshd" id="feat_ssh" value="yes"> SSH server</label></p>
+  <p>
+    <label>Display
+      <select name="display" id="feat_display">
+        <option value="none">none</option>
+        <option value="pirate-audio">Pimoroni Pirate Audio (240×240)</option>
+        <option value="adafruit-1.3-tft">Adafruit 1.3" TFT (240×240)</option>
+        <option value="adafruit-mini-pitft">Adafruit Mini PiTFT (240×135)</option>
+      </select>
+    </label>
+  </p>
+  <button id="apply-features" type="button">Apply &amp; reboot</button>
+</form>
+</section>
+
+<section>
 <h2>Network mode</h2>
 <p class="muted">Standalone broadcasts the <code>Alphasound</code> WiFi for car/portable use. Client joins an existing network — useful at home, and unlocks "Check for updates" below. Wrong client credentials fall back to AP mode automatically.</p>
 <form id="mode-form">
@@ -160,7 +180,8 @@ async function refreshStatus() {
     }
     if (!authed) showMain();
     const s = await r.json();
-    $('version').textContent = `${s.version} · uptime ${s.uptime} · ${s.ip || 'no IP'}`;
+    const bootStr = s.boot_seconds ? ` · ready in ${s.boot_seconds.toFixed(1)}s` : '';
+    $('version').textContent = `${s.version} · uptime ${s.uptime} · ${s.ip || 'no IP'}${bootStr}`;
     const tbody = document.createElement('tbody');
     for (const [name, ok] of Object.entries(s.services)) {
       tbody.appendChild(row(name, ok));
@@ -171,7 +192,7 @@ async function refreshStatus() {
     const table = $('status');
     table.replaceChild(tbody, table.querySelector('tbody'));
 
-    // Reflect mode in the form (only set radios on first load so we
+    // Reflect mode + features in the forms (only on first load so we
     // don't fight the user mid-edit).
     if (currentMode === null && s.mode) {
       currentMode = s.mode;
@@ -181,6 +202,12 @@ async function refreshStatus() {
       $('client-fields').style.display = (s.mode === 'DEV') ? '' : 'none';
       $('update-mode-note').textContent = (s.mode === 'DEV') ? '' : '(switch to client mode first)';
       $('check-update').disabled = (s.mode !== 'DEV');
+
+      if (s.features) {
+        $('feat_bt').checked = (s.features.bluetooth === 'yes');
+        $('feat_ssh').checked = (s.features.sshd === 'yes');
+        $('feat_display').value = s.features.display || 'none';
+      }
     }
   } catch (e) {
     const tbody = document.createElement('tbody');
@@ -281,6 +308,23 @@ $('rollback').onclick = async () => {
 $('logout').onclick = async () => {
   await fetch('/cgi-bin/logout', { method: 'POST' });
   showLogin();
+};
+
+$('apply-features').onclick = async () => {
+  if (!confirm('Apply feature changes and reboot?')) return;
+  const fd = new FormData();
+  fd.set('bluetooth', $('feat_bt').checked ? 'yes' : 'no');
+  fd.set('sshd', $('feat_ssh').checked ? 'yes' : 'no');
+  fd.set('display', $('feat_display').value);
+  log('applying…');
+  try {
+    const r = await fetch('/cgi-bin/setfeatures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fd).toString(),
+    });
+    log(await r.text());
+  } catch (e) { log('apply failed: ' + e.message); }
 };
 
 refreshStatus();

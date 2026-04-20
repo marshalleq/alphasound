@@ -33,7 +33,7 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
 # replaces /etc/runlevels wholesale, so if we don't list these here, they
 # won't be enabled.
 SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
-BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog alphasound-rollback alphasound-persist"
+BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features"
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
@@ -162,8 +162,13 @@ REPOS
             echo 'no /chroot/bin/busybox-extras found, skipping relocation'
         fi
 
-        # Version stamp for the web UI
+        # Version stamps. alphasound-version is for display in the web UI.
+        # alphasound-alpine-version is checked at update time to refuse
+        # apkovls built against an incompatible Alpine major version
+        # (the modloop from the .img.xz must match — we can't ship new
+        # kernel modules in an apkovl).
         echo '${VERSION}' > /chroot/etc/alphasound-version
+        echo '${ALPINE_RELEASE}' > /chroot/etc/alphasound-alpine-version
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true

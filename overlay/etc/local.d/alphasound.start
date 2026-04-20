@@ -14,6 +14,7 @@ ALPHASOUND_COUNTRY="NZ"
 ALPHASOUND_OUTPUT_DEVICE="auto"
 ALPHASOUND_VOLUME_MAX_DB="-3.00"
 ALPHASOUND_BLUETOOTH="yes"
+ALPHASOUND_SSHD="yes"
 ALPHASOUND_DISPLAY="none"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
 ALPHASOUND_DEV_WIFI_SSID=""
@@ -55,6 +56,17 @@ log() {
     echo "[alphasound] $*" > /dev/console
     logger -t alphasound -- "$*" 2>/dev/null
 }
+
+# Capture cumulative seconds-since-power-on at named checkpoints. Each
+# checkpoint writes its uptime to /tmp/alphasound-boot-time as one line:
+# "<name> <seconds>". Banner + status CGI read this to show "ready in
+# X.Xs" so we can see what each change does to boot speed.
+checkpoint() {
+    awk -v n="$1" '{ printf "%s %.2f\n", n, $1 }' /proc/uptime \
+        >> /tmp/alphasound-boot-time
+}
+: > /tmp/alphasound-boot-time
+checkpoint local-d-start
 
 # Persist SSH host keys + Bluetooth pairings to the SD card so they survive
 # reboots and apkovl swaps. alphasound-persist (boot runlevel) restores
@@ -236,10 +248,12 @@ fi
 if [ "$EFFECTIVE_MODE" = "RUN" ]; then
     start_ap_mode
 fi
+checkpoint network-ready
 
 log "restarting shairport-sync with new config"
 timeout 10 rc-service shairport-sync restart \
     || log "shairport-sync restart failed/timed out"
+checkpoint audio-ready
 
 start_bluetooth_setup
 
@@ -260,8 +274,15 @@ fi
 # services and pgrep for things we start ourselves (hostapd, bluealsa-aplay).
 # 5s sleep gives slower services like shairport-sync time to bind.
 sleep 5
+checkpoint ready
 svc_ok() { rc-service "$1" status 2>/dev/null | grep -q started; }
 proc_ok() { pgrep -x "$1" >/dev/null 2>&1; }
+
+# Format checkpoint times for the banner: "0.45 / 4.20 / 8.10 / 13.50"
+boot_times() {
+    awk '{ printf "%s%s", sep, $2; sep=" / " } END { print "" }' \
+        /tmp/alphasound-boot-time 2>/dev/null
+}
 
 WLAN_IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}')
 WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' || echo "no wlan0")
@@ -300,6 +321,8 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
         echo "  display:    $(svc_ok alphasound-display && echo OK || echo FAIL)  ($ALPHASOUND_DISPLAY)"
     fi
     echo "  Web UI:     http://${WLAN_IP%/*}/"
+    echo "  Boot time:  $(boot_times) seconds"
+    echo "              (local-d / network / audio / ready)"
     echo "================================================"
     echo
 } > /dev/console 2>&1
