@@ -135,24 +135,30 @@ REPOS
             ls /chroot/etc/runlevels/\$lvl
         done
 
+        echo '--- post-install fixups ---'
+
         # local.d scripts and our init.d services must be executable
         chmod +x /chroot/etc/local.d/*.start
         chmod +x /chroot/etc/init.d/alphasound-*
 
-        # Web UI scripts must be executable for busybox httpd to invoke them
+        # Web UI scripts must be executable for httpd to invoke them
         chmod +x /chroot/var/www/cgi-bin/*
 
         # busybox-extras puts its binary at /bin/busybox-extras and creates
         # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
         # ship /bin in the apkovl (clobbers modloop), so move the binary
-        # to /usr/bin and repoint every applet symlink. busybox find lacks
-        # -lname so we walk and use readlink instead.
+        # to /usr/bin and repoint every applet symlink.
         if [ -f /chroot/bin/busybox-extras ]; then
+            echo 'relocating busybox-extras /bin -> /usr/bin'
             mv /chroot/bin/busybox-extras /chroot/usr/bin/busybox-extras
             find /chroot/usr -type l | while read -r f; do
-                [ \"\$(readlink \"\$f\")\" = '/bin/busybox-extras' ] \
-                    && ln -sf /usr/bin/busybox-extras \"\$f\"
+                if [ \"\$(readlink \"\$f\")\" = '/bin/busybox-extras' ]; then
+                    ln -sf /usr/bin/busybox-extras \"\$f\"
+                    echo \"  repointed \$f\"
+                fi
             done
+        else
+            echo 'no /chroot/bin/busybox-extras found, skipping relocation'
         fi
 
         # Version stamp for the web UI
@@ -160,6 +166,8 @@ REPOS
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true
+
+        echo '--- chroot ready ---'
     "
 
 # --- Pack the chroot as the apkovl ---
