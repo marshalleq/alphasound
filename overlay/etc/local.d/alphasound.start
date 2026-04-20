@@ -243,8 +243,14 @@ timeout 10 rc-service shairport-sync restart \
 
 start_bluetooth_setup
 
-if [ "$ALPHASOUND_DISPLAY" = "pirate-audio" ]; then
-    log "starting display service (pirate-audio)"
+if [ "$ALPHASOUND_DISPLAY" != "none" ] && [ -n "$ALPHASOUND_DISPLAY" ]; then
+    log "starting display service ($ALPHASOUND_DISPLAY)"
+    # openrc auto-sources /etc/conf.d/<service> for envs that get exported
+    # to the service's command. Write the chosen device there.
+    mkdir -p /etc/conf.d
+    cat > /etc/conf.d/alphasound-display << EOF
+export ALPHASOUND_DISPLAY="$ALPHASOUND_DISPLAY"
+EOF
     timeout 10 rc-service alphasound-display start \
         || log "alphasound-display start failed/timed out"
 fi
@@ -290,6 +296,9 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
         echo "  bt-aplay:   $(proc_ok bluealsa-aplay && echo OK || echo FAIL)  (audio routing → $ALPHASOUND_OUTPUT_DEVICE)"
     fi
     echo "  sshd:       $(svc_ok sshd && echo OK || echo FAIL)"
+    if [ "$ALPHASOUND_DISPLAY" != "none" ] && [ -n "$ALPHASOUND_DISPLAY" ]; then
+        echo "  display:    $(svc_ok alphasound-display && echo OK || echo FAIL)  ($ALPHASOUND_DISPLAY)"
+    fi
     echo "  Web UI:     http://${WLAN_IP%/*}/"
     echo "================================================"
     echo

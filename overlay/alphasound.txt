@@ -43,10 +43,13 @@ ALPHASOUND_VOLUME_MAX_DB=-3.00
 # Bluetooth A2DP receiver for non-Apple devices (yes/no)
 ALPHASOUND_BLUETOOTH=yes
 
-# Display: "pirate-audio" enables the metadata-on-LCD service for the
-# Pimoroni Pirate Audio (any variant). "none" leaves the display service
-# off — saves a few seconds on boot if you don't have a screen.
-# When enabled, also enable SPI in usercfg.txt (uncomment dtparam=spi=on).
+# Display: shows current track + album art on a small SPI LCD when
+# something's AirPlaying. "none" disables the service (faster boot).
+# Supported values:
+#   none                     no display
+#   pirate-audio             Pimoroni Pirate Audio (any variant) — 240x240 ST7789
+#   adafruit-1.3-tft         Adafruit 1.3" TFT (#2090) — 240x240 ST7789
+#   adafruit-mini-pitft      Adafruit Mini PiTFT 1.14" (#4393) — 240x135 ST7789
 ALPHASOUND_DISPLAY=none
 
 # SSH root password. Leave empty to disable password auth (key-only).
