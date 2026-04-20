@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Renders shairport-sync metadata to a Pimoroni Pirate Audio LCD.
+# Not enabled in any runlevel by default — alphasound.start starts this
+# only when ALPHASOUND_DISPLAY=pirate-audio in alphasound.txt.
+
+description="Alphasound display service (Pirate Audio LCD)"
+command="/usr/bin/python3"
+command_args="/usr/local/bin/alphasound-display.py"
+command_background="yes"
+pidfile="/run/alphasound-display.pid"
+output_log="/var/log/alphasound-display.log"
+error_log="/var/log/alphasound-display.log"
+
+depend() {
+    need shairport-sync
+}

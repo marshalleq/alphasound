@@ -10,6 +10,9 @@
 # a 30s client-mode timeout that falls back to AP for that boot, leaving
 # the web UI reachable so the user can retry.
 
+. /etc/alphasound/session.sh
+require_session
+
 set -e
 
 CONFIG=/media/mmcblk0p1/alphasound.txt

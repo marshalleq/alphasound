@@ -29,6 +29,19 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 <h1>Alphasound</h1>
 <div class="sub" id="version">…</div>
 
+<section id="login-section" hidden>
+<h2>Sign in</h2>
+<form id="login-form" autocomplete="on" action="/cgi-bin/login" method="post">
+  <p><label>Password
+    <input type="password" name="password" id="password" autocomplete="current-password" required>
+  </label></p>
+  <button type="submit">Sign in</button>
+  <span id="login-error" class="fail" style="margin-left: 0.5rem;"></span>
+</form>
+</section>
+
+<div id="main-content" hidden>
+
 <section>
 <h2>Status</h2>
 <table id="status"><tbody><tr><td>Loading…</td></tr></tbody></table>
@@ -72,10 +85,12 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 <div class="row">
   <button id="restart">Restart</button>
   <button id="rollback" class="danger">Roll back to backup</button>
+  <button id="logout">Sign out</button>
 </div>
 </section>
 
 <div id="log"></div>
+</div><!-- /main-content -->
 
 <script>
 const $ = id => document.getElementById(id);
@@ -99,10 +114,51 @@ function row(name, ok, note) {
 }
 
 let currentMode = null;
+let authed = false;
+
+function showLogin() {
+  authed = false;
+  $('login-section').hidden = false;
+  $('main-content').hidden = true;
+  setTimeout(() => $('password').focus(), 0);
+}
+
+function showMain() {
+  authed = true;
+  $('login-section').hidden = true;
+  $('main-content').hidden = false;
+}
+
+$('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('login-error').textContent = '';
+  const password = $('password').value;
+  try {
+    const r = await fetch('/cgi-bin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password }).toString(),
+    });
+    if (r.ok) {
+      $('password').value = '';
+      showMain();
+      refreshStatus();
+    } else {
+      $('login-error').textContent = (await r.text()).trim() || 'login failed';
+    }
+  } catch (err) {
+    $('login-error').textContent = 'network error: ' + err.message;
+  }
+});
 
 async function refreshStatus() {
   try {
     const r = await fetch('/cgi-bin/status', { cache: 'no-store' });
+    if (r.status === 401) {
+      showLogin();
+      return;
+    }
+    if (!authed) showMain();
     const s = await r.json();
     $('version').textContent = `${s.version} · uptime ${s.uptime} · ${s.ip || 'no IP'}`;
     const tbody = document.createElement('tbody');
@@ -220,6 +276,11 @@ $('restart').onclick = async () => {
 $('rollback').onclick = async () => {
   if (!confirm('Restore previous apkovl from .bak and reboot?')) return;
   log(await (await fetch('/cgi-bin/rollback', { method: 'POST' })).text());
+};
+
+$('logout').onclick = async () => {
+  await fetch('/cgi-bin/logout', { method: 'POST' });
+  showLogin();
 };
 
 refreshStatus();

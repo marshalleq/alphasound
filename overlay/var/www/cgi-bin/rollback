@@ -2,6 +2,9 @@
 # Manually restore the previous apkovl from .bak and reboot. Useful when
 # the user knows an update is bad before the auto-rollback threshold hits.
 
+. /etc/alphasound/session.sh
+require_session
+
 set -e
 
 BOOT=/media/mmcblk0p1

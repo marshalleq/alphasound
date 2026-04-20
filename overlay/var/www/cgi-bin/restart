@@ -1,6 +1,9 @@
 #!/bin/sh
 # Reboot the device.
 
+. /etc/alphasound/session.sh
+require_session
+
 if [ "$REQUEST_METHOD" != "POST" ]; then
     printf 'Status: 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nuse POST\n'
     exit

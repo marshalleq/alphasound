@@ -3,6 +3,9 @@
 # arm the rollback flag, and reboot. The web UI sends raw bytes (not
 # multipart/form-data) so we don't need any multipart parsing in shell.
 
+. /etc/alphasound/session.sh
+require_session
+
 set -e
 
 BOOT=/media/mmcblk0p1

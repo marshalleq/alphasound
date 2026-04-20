@@ -47,11 +47,18 @@ ALPHASOUND_ROOT_PASSWORD=alphasound
 
 **Change `ALPHASOUND_PASSPHRASE` and `ALPHASOUND_ROOT_PASSWORD` before driving** — both default to well-known values.
 
-For DAC setup, edit `usercfg.txt`:
+For DAC setup, edit `usercfg.txt` and uncomment ONE `dtoverlay=` line matching your hardware. Supported HATs include:
 
-```ini
-dtoverlay=hifiberry-dac
-```
+- **HiFiBerry**: DAC, DAC+ family, DAC2 HD, Digi+, Amp+, Amp2, MiniAmp, Beocreate
+- **Pimoroni Pirate Audio**: Headphone Amp, Line-Out, Stereo Speakers (all use `hifiberry-dac`)
+- **IQaudIO**: Pi-DAC, DAC+, DAC+ Zero, Digi
+- **Allo Boss DAC**, **Audio Injector Stereo**, **Google AIY Voice HAT**, **JustBoom DAC**
+
+USB DACs work without any overlay. With no DAC at all, audio comes out HDMI (auto-detected).
+
+### Pirate Audio screen
+
+If you have a Pimoroni Pirate Audio (any variant), set `ALPHASOUND_DISPLAY=pirate-audio` in `alphasound.txt`. The 240×240 LCD then shows the current track's title, artist, and cover art whenever something's AirPlaying. SPI is enabled in `usercfg.txt` by default so no extra setup needed. Leave `ALPHASOUND_DISPLAY=none` to skip the display service entirely (saves a few seconds on boot).
 
 ## Development mode
 
@@ -73,7 +80,7 @@ Host keys are persisted to the SD card on first boot, so subsequent boots reuse 
 
 ## Web UI
 
-The device runs a minimal web UI on `http://10.0.10.1` (basic auth: `root` / `ALPHASOUND_ROOT_PASSWORD`). Once installed in a hard-to-reach spot, this is your primary admin interface:
+The device runs a minimal web UI on `http://10.0.10.1` or `http://alphasound.local`. Sign in with the value of `ALPHASOUND_ROOT_PASSWORD` from `alphasound.txt`. Browser keychains save the credentials so subsequent visits are one tap. Once installed in a hard-to-reach spot, this is your primary admin interface:
 
 - **Status** — version, uptime, IP, per-service health (auto-refreshes every 5s)
 - **Network mode** — switch between Standalone (AP) and Client (joins existing WiFi)

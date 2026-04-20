@@ -14,6 +14,7 @@ ALPHASOUND_COUNTRY="NZ"
 ALPHASOUND_OUTPUT_DEVICE="auto"
 ALPHASOUND_VOLUME_MAX_DB="-3.00"
 ALPHASOUND_BLUETOOTH="yes"
+ALPHASOUND_DISPLAY="none"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
 ALPHASOUND_DEV_WIFI_SSID=""
 ALPHASOUND_DEV_WIFI_PASSWORD=""
@@ -75,10 +76,12 @@ save_persistent_state() {
 # but reading it needs WPA2 access to the AP anyway.
 start_web_ui() {
     log "starting web UI on http://10.0.10.1"
+    # No basic-auth — we use a HTML form login + session cookie instead
+    # (iOS keychain saves form credentials reliably; basic auth often
+    # gets refused). Each protected CGI calls require_session.
     cat > /etc/httpd.conf << EOF
 H:/var/www
 I:index.html
-/cgi-bin/:root:$ALPHASOUND_ROOT_PASSWORD
 EOF
     chmod 600 /etc/httpd.conf
 
@@ -116,6 +119,10 @@ fi
 
 write_shairport_config() {
     log "writing shairport-sync config"
+    # metadata block is always emitted; the alphasound-display service is
+    # what actually consumes the pipe (only started when DISPLAY != none).
+    # No real cost when nobody reads it — the pipe is non-blocking-ish
+    # thanks to pipe_timeout.
     cat > /etc/shairport-sync.conf << EOF
 general =
 {
@@ -127,6 +134,14 @@ general =
 alsa =
 {
     output_device = "$ALPHASOUND_OUTPUT_DEVICE";
+};
+
+metadata =
+{
+    enabled = "yes";
+    include_cover_art = "yes";
+    pipe_name = "/tmp/shairport-sync-metadata";
+    pipe_timeout = 5000;
 };
 EOF
 }
@@ -227,6 +242,12 @@ timeout 10 rc-service shairport-sync restart \
     || log "shairport-sync restart failed/timed out"
 
 start_bluetooth_setup
+
+if [ "$ALPHASOUND_DISPLAY" = "pirate-audio" ]; then
+    log "starting display service (pirate-audio)"
+    timeout 10 rc-service alphasound-display start \
+        || log "alphasound-display start failed/timed out"
+fi
 
 # Status banner — printed to /dev/console so it's the last thing on the
 # HDMI screen. Use rc-service status (canonical) for openrc-managed

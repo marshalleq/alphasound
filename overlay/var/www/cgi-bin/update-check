@@ -4,6 +4,9 @@
 # latest tag, the apkovl download URL, and whether it differs from
 # what's installed.
 
+. /etc/alphasound/session.sh
+require_session
+
 set -e
 
 REPO=$(grep '^ALPHASOUND_UPDATE_REPO=' /media/mmcblk0p1/alphasound.txt 2>/dev/null \

@@ -43,6 +43,12 @@ ALPHASOUND_VOLUME_MAX_DB=-3.00
 # Bluetooth A2DP receiver for non-Apple devices (yes/no)
 ALPHASOUND_BLUETOOTH=yes
 
+# Display: "pirate-audio" enables the metadata-on-LCD service for the
+# Pimoroni Pirate Audio (any variant). "none" leaves the display service
+# off — saves a few seconds on boot if you don't have a screen.
+# When enabled, also enable SPI in usercfg.txt (uncomment dtparam=spi=on).
+ALPHASOUND_DISPLAY=none
+
 # SSH root password. Leave empty to disable password auth (key-only).
 # CHANGE THIS — the default is well-known and the device exposes sshd
 # on its WiFi AP.

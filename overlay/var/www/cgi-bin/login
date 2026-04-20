@@ -1,0 +1,47 @@
+#!/bin/sh
+# Validate password against ALPHASOUND_ROOT_PASSWORD and issue a session
+# cookie. The token is 32 random hex chars stored in tmpfs.
+
+set -e
+
+SESSION_DIR=/tmp/alphasound-sessions
+CONFIG=/media/mmcblk0p1/alphasound.txt
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+DATA=$(head -c "${CONTENT_LENGTH:-0}")
+PASSWORD=$(printf '%s' "$DATA" | tr '&' '\n' | grep '^password=' | head -1 | cut -d= -f2-)
+
+# URL-decode (+ → space, %XX → byte)
+PASSWORD=$(printf '%s' "$PASSWORD" | sed 's/+/ /g')
+PASSWORD=$(printf '%b' "$(printf '%s' "$PASSWORD" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x\1/g')")
+
+EXPECTED=$(grep '^ALPHASOUND_ROOT_PASSWORD=' "$CONFIG" 2>/dev/null | head -1 | cut -d= -f2-)
+
+# Constant-ish-time comparison would be nice but shell can't easily.
+# Add a small sleep on failure to take the edge off naive brute force —
+# the WPA2 password gates network access first anyway.
+if [ -z "$EXPECTED" ] || [ "$PASSWORD" != "$EXPECTED" ]; then
+    sleep 1
+    reply "401 Unauthorized" "bad password"
+fi
+
+mkdir -p "$SESSION_DIR"
+chmod 700 "$SESSION_DIR"
+TOKEN=$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
+EXPIRY=$(( $(date +%s) + 86400 * 30 ))
+echo "$EXPIRY" > "$SESSION_DIR/$TOKEN"
+chmod 600 "$SESSION_DIR/$TOKEN"
+
+printf 'Status: 200 OK\r\n'
+printf 'Set-Cookie: alphasound=%s; HttpOnly; Path=/; Max-Age=2592000; SameSite=Strict\r\n' "$TOKEN"
+printf 'Content-Type: text/plain\r\n\r\n'
+printf 'ok\n'
