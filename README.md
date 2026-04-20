@@ -1,23 +1,41 @@
 # Alphasound
 
-A tiny Raspberry Pi image that turns your Pi into an AirPlay and Bluetooth audio receiver for your car stereo. Based on [Alpine Linux](https://alpinelinux.org/), [shairport-sync](https://github.com/mikebrady/shairport-sync), and [BlueALSA](https://github.com/Arkq/bluez-alsa).
+A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio receiver — for your car, your home stereo, that old amplifier in the garage, anywhere you want AirPlay or Bluetooth playback without buying a smart speaker. Based on [Alpine Linux](https://alpinelinux.org/), [shairport-sync](https://github.com/mikebrady/shairport-sync), and [BlueALSA](https://github.com/Arkq/bluez-alsa).
 
-## What it does
+## Highlights
 
-- Creates a **WPA2-protected** WiFi access point with **no internet gateway** — your phone connects to it for AirPlay while cellular handles all data traffic
-- Runs [shairport-sync](https://github.com/mikebrady/shairport-sync) as an AirPlay receiver, outputting audio to a DAC connected to your car's AUX input
-- **Bluetooth A2DP** receiver for Android and other non-Apple devices — auto-pairs with no PIN
-- **Runs entirely from RAM** (Alpine diskless mode) — the SD card is never written to, so it survives hard power cuts when you turn off the ignition
+- **AirPlay + Bluetooth A2DP** in one device — Apple, Android, Linux, Windows clients all work
+- **Two network modes**, switchable from the web UI:
+  - **Standalone** — broadcasts its own WPA2 WiFi (perfect for a car: phone connects, cellular still handles data)
+  - **Client** — joins your home WiFi (use it on your home stereo, pull updates over the internet)
+- **Web management UI** at `http://10.0.10.1` — change network mode, push updates, restart, roll back; works from a phone or laptop
+- **In-place updates** with auto-rollback — never pull the SD card again. Drop the device behind your stereo and forget it
+- **Optional LCD** — Pimoroni Pirate Audio and Adafruit Mini PiTFT show track + artist + album art when music's playing
+- **Runs entirely from RAM** (Alpine diskless) — survives hard power cuts (ignition off, breaker trip, kid yanks the plug). The SD card is read-only at runtime
 - Boots in seconds on a Pi Zero 2 W
-- Image size ~100MB compressed
+- ~100 MB compressed image
 
-## Hardware
+## Audio hardware
 
-- **Raspberry Pi Zero 2 W** (recommended) or Pi 3/4/5
-- **DAC** — the Pi's built-in 3.5mm jack is noisy. Use a HAT DAC (Pimoroni pHAT DAC) or USB DAC
-- **Micro SD card** (1GB+)
-- **USB power** from a switched 12V line via a 12V-to-USB adapter
-- **3.5mm cable** from DAC to car AUX input
+Works with most popular Pi audio HATs out of the box — pick the matching `dtoverlay=` line in `usercfg.txt`:
+
+| Hardware | Notes |
+|---|---|
+| **Pimoroni Pirate Audio** (Headphone Amp / Line-Out / Stereo Speakers) | DAC + 240×240 LCD + 4 buttons in one. Set `ALPHASOUND_DISPLAY=pirate-audio` to enable the screen. |
+| **HiFiBerry DAC family** (DAC, DAC+, DAC+ Pro, DAC2 HD, MiniAmp, Beocreate) | Studio-grade audio output |
+| **HiFiBerry Digi+** | S/PDIF out for digital home stereos |
+| **HiFiBerry Amp+ / Amp2** | Built-in speaker amp |
+| **IQaudIO Pi-DAC, DAC+, Digi** | |
+| **Allo Boss DAC**, **JustBoom DAC**, **Audio Injector Stereo** | |
+| **Any USB DAC** | No config needed — auto-detected |
+| **HDMI audio** | Auto-fallback when nothing else is plugged in (handy for testing) |
+
+## Hardware (otherwise)
+
+- **Raspberry Pi Zero 2 W** (recommended) or any Pi 3/4/5
+- **Micro SD card** (1 GB+)
+- **USB power** — for car installs, a switched 12V-to-USB adapter on a switched ignition line
+- Cable to your stereo: 3.5mm / RCA / S/PDIF depending on your DAC
 
 ## Quick start
 
