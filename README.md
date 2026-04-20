@@ -9,8 +9,10 @@ A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio recei
   - **Standalone** — broadcasts its own WPA2 WiFi (perfect for a car: phone connects, cellular still handles data)
   - **Client** — joins your home WiFi (use it on your home stereo, pull updates over the internet)
 - **Web management UI** at `http://10.0.10.1` — change network mode, push updates, restart, roll back; works from a phone or laptop
-- **In-place updates** with auto-rollback — never pull the SD card again. Drop the device behind your stereo and forget it
+- **In-place updates** with auto-rollback — never pull the SD card again. Drop the device behind your stereo and forget it. Apkovl uploads are version-checked against the running modloop so you can't accidentally install a binary-incompatible build
 - **Optional LCD** — Pimoroni Pirate Audio and Adafruit Mini PiTFT show track + artist + album art when music's playing
+- **Toggle features off for faster boot** — disable Bluetooth, SSH, or the display from the web UI. Each unused subsystem off saves a few seconds
+- **Boot timer** — live measurement of how long it took to reach "ready" (AP up + AirPlay listening), shown on the console banner and in the web UI. Lets you see exactly what each toggle costs
 - **Runs entirely from RAM** (Alpine diskless) — survives hard power cuts (ignition off, breaker trip, kid yanks the plug). The SD card is read-only at runtime
 - Boots in seconds on a Pi Zero 2 W
 - ~100 MB compressed image

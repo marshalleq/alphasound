@@ -1,0 +1,67 @@
+#!/bin/sh
+# Update feature toggles in alphasound.txt and reboot.
+#
+# Form fields (POST, application/x-www-form-urlencoded):
+#   bluetooth = yes|no
+#   sshd      = yes|no
+#   display   = none|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+DATA=$(head -c "${CONTENT_LENGTH:-0}")
+
+urldecode() {
+    s=$(printf '%s' "$1" | sed 's/+/ /g')
+    printf '%b' "$(printf '%s' "$s" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x\1/g')"
+}
+field() {
+    raw=$(printf '%s' "$DATA" | tr '&' '\n' | grep "^$1=" | head -1 | cut -d= -f2-)
+    urldecode "$raw"
+}
+
+BT=$(field bluetooth)
+SSH=$(field sshd)
+DISPLAY=$(field display)
+
+# Validate
+case "$BT" in yes|no) ;; *) reply "400 Bad Request" "bluetooth must be yes/no" ;; esac
+case "$SSH" in yes|no) ;; *) reply "400 Bad Request" "sshd must be yes/no" ;; esac
+case "$DISPLAY" in none|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft) ;;
+    *) reply "400 Bad Request" "display value not recognised" ;;
+esac
+
+update_config() {
+    key=$1
+    value=$(printf '%s' "$2" | sed 's/[\\|]/\\&/g')
+    if grep -q "^${key}=" "$CONFIG"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$CONFIG"
+    else
+        printf '%s=%s\n' "$key" "$2" >> "$CONFIG"
+    fi
+}
+
+mount -o remount,rw /media/mmcblk0p1
+update_config ALPHASOUND_BLUETOOTH "$BT"
+update_config ALPHASOUND_SSHD "$SSH"
+update_config ALPHASOUND_DISPLAY "$DISPLAY"
+sync
+mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+
+reply "200 OK" "features updated — rebooting now"
+
+( sleep 1; reboot ) &

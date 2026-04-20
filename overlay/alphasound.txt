@@ -40,11 +40,19 @@ ALPHASOUND_OUTPUT_DEVICE=auto
 # Max volume in dB (reduce if DAC overloads car AUX input, 0.0 = full)
 ALPHASOUND_VOLUME_MAX_DB=-3.00
 
+# === Optional features — disable to speed up boot ===
+# Each one off saves a few seconds on boot. Safe to toggle from the web
+# UI (under "Features"). Default is everything on except the display.
+
 # Bluetooth A2DP receiver for non-Apple devices (yes/no)
 ALPHASOUND_BLUETOOTH=yes
 
+# SSH server — needed for command-line debugging, not needed for normal
+# AirPlay/BT use. Off saves ~1-2s and reduces attack surface.
+ALPHASOUND_SSHD=yes
+
 # Display: shows current track + album art on a small SPI LCD when
-# something's AirPlaying. "none" disables the service (faster boot).
+# something's AirPlaying. "none" disables the service entirely.
 # Supported values:
 #   none                     no display
 #   pirate-audio             Pimoroni Pirate Audio (any variant) — 240x240 ST7789

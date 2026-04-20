@@ -48,6 +48,9 @@ if ! tar -tzf "$TMP" >/dev/null 2>&1; then
     reply "400 Bad Request" "downloaded file is not a valid tar.gz"
 fi
 
+. /etc/alphasound/apkovl-check.sh
+check_apkovl_compat "$TMP"
+
 mount -o remount,rw "$BOOT"
 mv "$APKOVL" "$BAK" 2>/dev/null || true
 mv "$TMP" "$APKOVL"

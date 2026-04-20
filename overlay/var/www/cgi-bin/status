@@ -20,6 +20,21 @@ config_get() {
 }
 MODE=$(config_get ALPHASOUND_MODE)
 DEV_SSID=$(config_get ALPHASOUND_DEV_WIFI_SSID)
+FEAT_BT=$(config_get ALPHASOUND_BLUETOOTH)
+FEAT_SSH=$(config_get ALPHASOUND_SSHD)
+FEAT_DISPLAY=$(config_get ALPHASOUND_DISPLAY)
+[ -z "$FEAT_BT" ] && FEAT_BT=yes
+[ -z "$FEAT_SSH" ] && FEAT_SSH=yes
+[ -z "$FEAT_DISPLAY" ] && FEAT_DISPLAY=none
+
+# Boot timing checkpoints from /tmp/alphasound-boot-time. Returns the
+# "ready" line's seconds value; client can show the breakdown.
+BOOT_READY=$(awk '$1=="ready" { print $2 }' /tmp/alphasound-boot-time 2>/dev/null)
+[ -z "$BOOT_READY" ] && BOOT_READY=0
+BOOT_BREAKDOWN_JSON='{}'
+if [ -f /tmp/alphasound-boot-time ]; then
+    BOOT_BREAKDOWN_JSON=$(awk 'BEGIN{ printf "{" } { printf "%s\"%s\":%s", sep, $1, $2; sep="," } END{ printf "}" }' /tmp/alphasound-boot-time)
+fi
 
 # JSON-escape: only need to handle backslash and double quote for our values.
 json_esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
@@ -34,6 +49,13 @@ Cache-Control: no-store
   "ip": "$(json_esc "$IP")",
   "mode": "$(json_esc "$MODE")",
   "dev_ssid": "$(json_esc "$DEV_SSID")",
+  "features": {
+    "bluetooth": "$FEAT_BT",
+    "sshd":      "$FEAT_SSH",
+    "display":   "$FEAT_DISPLAY"
+  },
+  "boot_seconds": $BOOT_READY,
+  "boot_checkpoints": $BOOT_BREAKDOWN_JSON,
   "pending_update": $PENDING_COUNT,
   "services": {
     "hostapd":        $(proc hostapd),

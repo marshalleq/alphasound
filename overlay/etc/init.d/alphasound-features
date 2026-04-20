@@ -1,0 +1,42 @@
+#!/sbin/openrc-run
+# Reads ALPHASOUND_* feature flags from alphasound.txt and disables
+# unwanted services BEFORE the default runlevel starts them. Net effect:
+# turning Bluetooth off in the web UI saves the few seconds bluetoothd
+# and bluealsad take to initialise — actual boot speedup, not just a
+# config flag.
+#
+# Runlevel symlinks live in tmpfs (the apkovl is extracted fresh on
+# every boot), so any deletion we do here is automatically undone on
+# the next boot. Each boot starts from a clean baseline and re-applies
+# whatever the current alphasound.txt says.
+
+description="Apply feature toggles from alphasound.txt"
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+
+depend() {
+    need localmount
+}
+
+start() {
+    [ ! -f "$CONFIG" ] && return 0
+
+    local ssh bt
+    ssh=$(grep '^ALPHASOUND_SSHD=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
+    bt=$(grep '^ALPHASOUND_BLUETOOTH=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
+    [ -z "$ssh" ] && ssh=yes
+    [ -z "$bt" ] && bt=yes
+
+    if [ "$ssh" != "yes" ]; then
+        ebegin "disabling sshd"
+        rc-update del sshd default 2>/dev/null
+        eend 0
+    fi
+
+    if [ "$bt" != "yes" ]; then
+        ebegin "disabling Bluetooth"
+        rc-update del bluetooth default 2>/dev/null
+        rc-update del bluealsa default 2>/dev/null
+        eend 0
+    fi
+}
