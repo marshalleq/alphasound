@@ -142,6 +142,16 @@ REPOS
         # Web UI scripts must be executable for busybox httpd to invoke them
         chmod +x /chroot/var/www/cgi-bin/*
 
+        # busybox-extras puts its binary at /bin/busybox-extras and creates
+        # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
+        # ship /bin in the apkovl (clobbers modloop), so move the binary
+        # to /usr/bin and repoint every dangling symlink. find handles
+        # all the applets the package installs (httpd, telnetd, etc).
+        if [ -f /chroot/bin/busybox-extras ]; then
+            mv /chroot/bin/busybox-extras /chroot/usr/bin/busybox-extras
+            find /chroot/usr -lname '/bin/busybox-extras' -exec ln -sf /usr/bin/busybox-extras {} \;
+        fi
+
         # Version stamp for the web UI
         echo '${VERSION}' > /chroot/etc/alphasound-version
 
@@ -150,21 +160,18 @@ REPOS
     "
 
 # --- Pack the chroot as the apkovl ---
-# Include everything needed for binaries to resolve. Alpine RPi's modloop
-# has /bin /sbin /lib as REAL directories (not merged-/usr symlinks), so
-# any package that installs to those paths (notably busybox-extras at
-# /bin/busybox-extras) needs them shipped. We DO need to skip the
-# modloop-managed paths inside /lib (kernel modules + firmware) so we
-# don't clobber what initramfs sets up at boot.
+# Only include directories that genuinely need overriding. Crucially we
+# do NOT include /lib, /sbin, /bin: shipping those clobbers modloop's
+# carefully-set-up versions of openrc helper scripts and breaks /run
+# initialisation, which kills boot entirely. Anything we need from those
+# paths must be relocated into /usr/* in the docker step before tarring.
 echo "Packing apkovl from chroot..."
 $SUDO tar czf "${APKOVL_FILE}" \
     --exclude='var/cache' \
     --exclude='var/log' \
     --exclude='var/tmp' \
-    --exclude='lib/modules' \
-    --exclude='lib/firmware' \
     -C "${CHROOT_DIR}" \
-    etc usr var root bin sbin lib
+    etc usr var root
 APKOVL_SIZE=$(du -sb "${APKOVL_FILE}" | cut -f1)
 echo "apkovl size: $(du -sh "${APKOVL_FILE}" | cut -f1)"
 
