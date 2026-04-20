@@ -5,6 +5,7 @@ A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio recei
 ## Highlights
 
 - **AirPlay + Bluetooth A2DP** in one device — Apple, Android, Linux, Windows clients all work
+- **Optional Roon Bridge endpoint** — pair the device with your Roon Core for high-end multi-room audio (one-tap install from the web UI when in client mode)
 - **Two network modes**, switchable from the web UI:
   - **Standalone** — broadcasts its own WPA2 WiFi (perfect for a car: phone connects, cellular still handles data)
   - **Client** — joins your home WiFi (use it on your home stereo, pull updates over the internet)
@@ -75,6 +76,20 @@ For DAC setup, edit `usercfg.txt` and uncomment ONE `dtoverlay=` line matching y
 - **Allo Boss DAC**, **Audio Injector Stereo**, **Google AIY Voice HAT**, **JustBoom DAC**
 
 USB DACs work without any overlay. With no DAC at all, audio comes out HDMI (auto-detected).
+
+### Roon Bridge endpoint
+
+If you have a [Roon](https://roonlabs.com/) subscription and a Roon Core running on your home network, Alphasound can act as a Roon Bridge endpoint:
+
+1. Switch to client mode and join your home WiFi
+2. Open the web UI → "Roon Bridge" → **Install Roon Bridge**. The device downloads ~50 MB from Roon's CDN and persists it to the SD card
+3. Tick the **Roon Bridge endpoint** checkbox under Features → **Apply & reboot**
+4. Open Roon on your phone/computer; the Alphasound endpoint should appear under Settings → Audio
+
+Notes:
+- Roon Bridge is closed-source, owned by Roon Labs. We don't bundle it; we just facilitate the download. You're agreeing to Roon's terms when you install it.
+- Roon and AirPlay both grab the audio device exclusively, so only one will play at a time. If you only use Roon, disable AirPlay-related stuff in alphasound.txt to save boot time.
+- Roon Bridge needs internet for licensing checks and to find your Roon Core, so it only runs when the device is in client mode.
 
 ### Pirate Audio screen
 

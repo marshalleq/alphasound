@@ -16,6 +16,7 @@ ALPHASOUND_VOLUME_MAX_DB="-3.00"
 ALPHASOUND_BLUETOOTH="yes"
 ALPHASOUND_SSHD="yes"
 ALPHASOUND_DISPLAY="none"
+ALPHASOUND_ROON="no"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
 ALPHASOUND_DEV_WIFI_SSID=""
 ALPHASOUND_DEV_WIFI_PASSWORD=""
@@ -217,6 +218,33 @@ EOF
     return 1
 }
 
+start_roon() {
+    [ "$ALPHASOUND_ROON" = "yes" ] || return 0
+    local tarball=/media/mmcblk0p1/persist/roon/RoonBridge.tar.bz2
+    if [ ! -f "$tarball" ]; then
+        log "Roon enabled but RoonBridge not installed — use the web UI 'Install Roon Bridge' button"
+        return
+    fi
+    if [ "$EFFECTIVE_MODE" != "DEV" ]; then
+        log "Roon enabled but device is in AP mode; needs client mode to reach Core. Skipping."
+        return
+    fi
+    log "extracting RoonBridge to /opt (~10s)"
+    mkdir -p /opt
+    if ! bzip2 -dc "$tarball" | tar x -C /opt 2>/dev/null; then
+        log "RoonBridge extraction failed"
+        return
+    fi
+    # Ensure the persistent config dir is in place — Roon stores its
+    # device identity there, persisted to SD across reboots.
+    mkdir -p /media/mmcblk0p1/persist/roon-data
+    rm -rf /var/roon
+    ln -sf /media/mmcblk0p1/persist/roon-data /var/roon
+    log "starting RoonBridge"
+    rc-service alphasound-roon start \
+        || log "alphasound-roon start failed"
+}
+
 start_bluetooth_setup() {
     [ "$ALPHASOUND_BLUETOOTH" = "yes" ] || return 0
     log "starting bluetooth setup in background"
@@ -256,6 +284,8 @@ timeout 10 rc-service shairport-sync restart \
 checkpoint audio-ready
 
 start_bluetooth_setup
+start_roon
+checkpoint roon-ready
 
 if [ "$ALPHASOUND_DISPLAY" != "none" ] && [ -n "$ALPHASOUND_DISPLAY" ]; then
     log "starting display service ($ALPHASOUND_DISPLAY)"
@@ -319,6 +349,9 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
     echo "  sshd:       $(svc_ok sshd && echo OK || echo FAIL)"
     if [ "$ALPHASOUND_DISPLAY" != "none" ] && [ -n "$ALPHASOUND_DISPLAY" ]; then
         echo "  display:    $(svc_ok alphasound-display && echo OK || echo FAIL)  ($ALPHASOUND_DISPLAY)"
+    fi
+    if [ "$ALPHASOUND_ROON" = "yes" ]; then
+        echo "  Roon:       $(svc_ok alphasound-roon && echo OK || echo FAIL)"
     fi
     echo "  Web UI:     http://${WLAN_IP%/*}/"
     echo "  Boot time:  $(boot_times) seconds"

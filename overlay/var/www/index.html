@@ -53,6 +53,7 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 <form id="features-form">
   <p><label><input type="checkbox" name="bluetooth" id="feat_bt" value="yes"> Bluetooth A2DP receiver</label></p>
   <p><label><input type="checkbox" name="sshd" id="feat_ssh" value="yes"> SSH server</label></p>
+  <p><label><input type="checkbox" name="roon" id="feat_roon" value="yes" disabled> Roon Bridge endpoint <span class="muted" id="roon-note">(install first)</span></label></p>
   <p>
     <label>Display
       <select name="display" id="feat_display">
@@ -65,6 +66,16 @@ input[type=file] { width: 100%; padding: 0.4rem; }
   </p>
   <button id="apply-features" type="button">Apply &amp; reboot</button>
 </form>
+</section>
+
+<section>
+<h2>Roon Bridge</h2>
+<p class="muted">Turns the device into a Roon-compatible audio endpoint. Requires client mode (so the device can reach your Roon Core), a one-time download from Roon's CDN, and a Roon Labs subscription on your Core. Roon Bridge and AirPlay both grab the audio device exclusively — only one will play at a time.</p>
+<div class="row">
+  <button id="install-roon">Install Roon Bridge</button>
+  <button id="uninstall-roon" class="danger">Uninstall</button>
+</div>
+<p id="roon-status" class="muted"></p>
 </section>
 
 <section>
@@ -207,6 +218,13 @@ async function refreshStatus() {
         $('feat_bt').checked = (s.features.bluetooth === 'yes');
         $('feat_ssh').checked = (s.features.sshd === 'yes');
         $('feat_display').value = s.features.display || 'none';
+        $('feat_roon').checked = (s.features.roon === 'yes');
+        // Only allow enabling Roon if the binary is installed
+        $('feat_roon').disabled = !s.roon_installed;
+        $('roon-note').textContent = s.roon_installed ? '' : '(install first)';
+        $('roon-status').textContent = s.roon_installed
+          ? 'Installed.' + (s.features.roon === 'yes' ? ' Enabled.' : ' Disabled.')
+          : 'Not installed.';
       }
     }
   } catch (e) {
@@ -316,6 +334,7 @@ $('apply-features').onclick = async () => {
   fd.set('bluetooth', $('feat_bt').checked ? 'yes' : 'no');
   fd.set('sshd', $('feat_ssh').checked ? 'yes' : 'no');
   fd.set('display', $('feat_display').value);
+  fd.set('roon', $('feat_roon').checked ? 'yes' : 'no');
   log('applying…');
   try {
     const r = await fetch('/cgi-bin/setfeatures', {
@@ -325,6 +344,25 @@ $('apply-features').onclick = async () => {
     });
     log(await r.text());
   } catch (e) { log('apply failed: ' + e.message); }
+};
+
+$('install-roon').onclick = async () => {
+  if (!confirm('Download Roon Bridge (~50 MB) from Roon Labs and install?')) return;
+  $('roon-status').textContent = 'downloading…';
+  try {
+    const r = await fetch('/cgi-bin/install-roon', { method: 'POST' });
+    $('roon-status').textContent = (await r.text()).trim();
+    refreshStatus();
+  } catch (e) { $('roon-status').textContent = 'install failed: ' + e.message; }
+};
+
+$('uninstall-roon').onclick = async () => {
+  if (!confirm('Remove Roon Bridge binary and saved identity?')) return;
+  try {
+    const r = await fetch('/cgi-bin/uninstall-roon', { method: 'POST' });
+    $('roon-status').textContent = (await r.text()).trim();
+    refreshStatus();
+  } catch (e) { $('roon-status').textContent = 'uninstall failed: ' + e.message; }
 };
 
 refreshStatus();

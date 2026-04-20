@@ -60,6 +60,14 @@ ALPHASOUND_SSHD=yes
 #   adafruit-mini-pitft      Adafruit Mini PiTFT 1.14" (#4393) — 240x135 ST7789
 ALPHASOUND_DISPLAY=none
 
+# Roon Bridge endpoint — turns the device into a Roon-compatible audio
+# zone. Requires client mode (needs to reach your Roon Core) and a
+# one-time install via the web UI's "Install Roon Bridge" button (which
+# downloads the binary from Roon's CDN). Roon Bridge and AirPlay both
+# claim the audio device exclusively, so only one will actually play
+# audio at a time — the device that most recently grabbed it wins.
+ALPHASOUND_ROON=no
+
 # SSH root password. Leave empty to disable password auth (key-only).
 # CHANGE THIS — the default is well-known and the device exposes sshd
 # on its WiFi AP.

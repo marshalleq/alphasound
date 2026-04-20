@@ -23,9 +23,13 @@ DEV_SSID=$(config_get ALPHASOUND_DEV_WIFI_SSID)
 FEAT_BT=$(config_get ALPHASOUND_BLUETOOTH)
 FEAT_SSH=$(config_get ALPHASOUND_SSHD)
 FEAT_DISPLAY=$(config_get ALPHASOUND_DISPLAY)
+FEAT_ROON=$(config_get ALPHASOUND_ROON)
 [ -z "$FEAT_BT" ] && FEAT_BT=yes
 [ -z "$FEAT_SSH" ] && FEAT_SSH=yes
 [ -z "$FEAT_DISPLAY" ] && FEAT_DISPLAY=none
+[ -z "$FEAT_ROON" ] && FEAT_ROON=no
+ROON_INSTALLED=false
+[ -f /media/mmcblk0p1/persist/roon/RoonBridge.tar.bz2 ] && ROON_INSTALLED=true
 
 # Boot timing checkpoints from /tmp/alphasound-boot-time. Returns the
 # "ready" line's seconds value; client can show the breakdown.
@@ -52,8 +56,10 @@ Cache-Control: no-store
   "features": {
     "bluetooth": "$FEAT_BT",
     "sshd":      "$FEAT_SSH",
-    "display":   "$FEAT_DISPLAY"
+    "display":   "$FEAT_DISPLAY",
+    "roon":      "$FEAT_ROON"
   },
+  "roon_installed": $ROON_INSTALLED,
   "boot_seconds": $BOOT_READY,
   "boot_checkpoints": $BOOT_BREAKDOWN_JSON,
   "pending_update": $PENDING_COUNT,

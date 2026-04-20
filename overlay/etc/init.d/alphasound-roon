@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Roon Bridge endpoint daemon. Started by alphasound.start (which extracts
+# the binary tarball from SD into /opt at boot) when ALPHASOUND_ROON=yes
+# AND the device is in client mode AND the user has installed Roon via
+# the web UI.
+
+description="Roon Bridge audio endpoint"
+command="/opt/RoonBridge/RoonBridge"
+command_background="yes"
+pidfile="/run/alphasound-roon.pid"
+output_log="/var/log/alphasound-roon.log"
+error_log="/var/log/alphasound-roon.log"
+
+depend() {
+    need net
+}
