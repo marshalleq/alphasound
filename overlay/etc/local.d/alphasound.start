@@ -105,30 +105,34 @@ EOF
     fi
 }
 
-# Resolve "auto" to a concrete ALSA device. Picks the last card that
-# isn't the Pi's onboard 3.5mm jack ("Headphones") and figures out the
-# right PCM device suffix:
-#   - bcm2835 (Pi onboard) exposes 2 PCMs: D0 = analog (disabled on
-#     Zero 2 W), D1 = HDMI. We want D1.
-#   - USB / HAT DACs expose a single PCM, so plain hw:N works.
-# Falls back to hw:0 if /proc/asound/cards is empty.
-if [ "$ALPHASOUND_OUTPUT_DEVICE" = "auto" ]; then
-    PICK_LINE=$(awk '/^ *[0-9]+ \[/ && !/Headphones/{ line=$0 } END{ print line }' /proc/asound/cards 2>/dev/null)
-    if [ -n "$PICK_LINE" ]; then
-        CARD_NUM=$(echo "$PICK_LINE" | awk '{ sub(/ /, "", $1); print $1 }')
-        case "$PICK_LINE" in
-            *bcm2835*|*BCM2835*)
-                ALPHASOUND_OUTPUT_DEVICE="hw:$CARD_NUM,1"
-                ;;
-            *)
-                ALPHASOUND_OUTPUT_DEVICE="hw:$CARD_NUM"
-                ;;
-        esac
-    else
-        ALPHASOUND_OUTPUT_DEVICE="hw:0"
-    fi
-    log "auto-selected output device: $ALPHASOUND_OUTPUT_DEVICE"
-fi
+# Resolve the output device to a concrete ALSA hw:... string.
+#   auto  — pick the last non-onboard card (USB / HAT DAC) and use it.
+#           Fall back to bcm2835 HDMI if nothing else is present.
+#   hdmi  — force bcm2835 HDMI even if a DAC is attached.
+#   hw:N  — pass-through for users who hand-edit alphasound.txt.
+# bcm2835 (Pi onboard) exposes 2 PCMs: D0 = analog (disabled on Zero 2 W),
+# D1 = HDMI. USB / HAT DACs expose a single PCM, so plain hw:N works.
+resolve_bcm2835_hdmi() {
+    n=$(awk '/^ *[0-9]+ \[/ && /bcm2835/ { gsub(/[[:space:]]/, "", $1); print $1; exit }' /proc/asound/cards 2>/dev/null)
+    echo "hw:${n:-0},1"
+}
+
+case "$ALPHASOUND_OUTPUT_DEVICE" in
+    auto)
+        PICK_LINE=$(awk '/^ *[0-9]+ \[/ && !/Headphones/ && !/bcm2835/ && !/BCM2835/ { line=$0 } END{ print line }' /proc/asound/cards 2>/dev/null)
+        if [ -n "$PICK_LINE" ]; then
+            CARD_NUM=$(echo "$PICK_LINE" | awk '{ sub(/ /, "", $1); print $1 }')
+            ALPHASOUND_OUTPUT_DEVICE="hw:$CARD_NUM"
+        else
+            ALPHASOUND_OUTPUT_DEVICE=$(resolve_bcm2835_hdmi)
+        fi
+        log "auto-selected output device: $ALPHASOUND_OUTPUT_DEVICE"
+        ;;
+    hdmi)
+        ALPHASOUND_OUTPUT_DEVICE=$(resolve_bcm2835_hdmi)
+        log "forced HDMI output: $ALPHASOUND_OUTPUT_DEVICE"
+        ;;
+esac
 
 write_shairport_config() {
     log "writing shairport-sync config"

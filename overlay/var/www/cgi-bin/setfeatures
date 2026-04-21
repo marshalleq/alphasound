@@ -4,7 +4,13 @@
 # Form fields (POST, application/x-www-form-urlencoded):
 #   bluetooth = yes|no
 #   sshd      = yes|no
-#   display   = none|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft
+#   display   = none|hdmi|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft
+#   output    = auto|hdmi
+#   roon      = yes|no
+#
+# When display=pirate-audio, we also write a managed block into usercfg.txt
+# to uncomment dtoverlay=hifiberry-dac — the Pirate Audio HAT is that DAC
+# and has no HAT-spec EEPROM, so it can't announce itself to the firmware.
 
 . /etc/alphasound/session.sh
 require_session
@@ -12,6 +18,7 @@ require_session
 set -e
 
 CONFIG=/media/mmcblk0p1/alphasound.txt
+USERCFG=/media/mmcblk0p1/usercfg.txt
 
 reply() {
     code=$1; body=$2
@@ -37,15 +44,17 @@ field() {
 BT=$(field bluetooth)
 SSH=$(field sshd)
 DISPLAY=$(field display)
+OUTPUT=$(field output)
 ROON=$(field roon)
 
 # Validate
 case "$BT" in yes|no) ;; *) reply "400 Bad Request" "bluetooth must be yes/no" ;; esac
 case "$SSH" in yes|no) ;; *) reply "400 Bad Request" "sshd must be yes/no" ;; esac
 case "$ROON" in yes|no) ;; *) reply "400 Bad Request" "roon must be yes/no" ;; esac
-case "$DISPLAY" in none|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft) ;;
+case "$DISPLAY" in none|hdmi|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft) ;;
     *) reply "400 Bad Request" "display value not recognised" ;;
 esac
+case "$OUTPUT" in auto|hdmi) ;; *) reply "400 Bad Request" "output must be auto or hdmi" ;; esac
 
 update_config() {
     key=$1
@@ -57,14 +66,40 @@ update_config() {
     fi
 }
 
+# Rewrite the alphasound-managed block at the end of usercfg.txt. Only
+# the marker-bounded region is touched; anything the user has added
+# above it (a custom DAC overlay, extra dtparams) is left alone.
+update_usercfg() {
+    [ -f "$USERCFG" ] || touch "$USERCFG"
+    tmp=/tmp/usercfg.$$
+    awk '
+        /^# >>> alphasound-managed >>>/ { skip=1; next }
+        skip && /^# <<< alphasound-managed <<</ { skip=0; next }
+        !skip { print }
+    ' "$USERCFG" > "$tmp"
+
+    {
+        printf '\n# >>> alphasound-managed >>>\n'
+        printf '# Auto-generated from the web UI. Edits inside this block\n'
+        printf '# are overwritten on every Apply.\n'
+        if [ "$DISPLAY" = "pirate-audio" ]; then
+            printf 'dtoverlay=hifiberry-dac\n'
+        fi
+        printf '# <<< alphasound-managed <<<\n'
+    } >> "$tmp"
+
+    mv "$tmp" "$USERCFG"
+}
+
 mount -o remount,rw /media/mmcblk0p1
 update_config ALPHASOUND_BLUETOOTH "$BT"
 update_config ALPHASOUND_SSHD "$SSH"
 update_config ALPHASOUND_DISPLAY "$DISPLAY"
+update_config ALPHASOUND_OUTPUT_DEVICE "$OUTPUT"
 update_config ALPHASOUND_ROON "$ROON"
+update_usercfg
 sync
 mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
 
-reply "200 OK" "features updated — rebooting now"
-
 ( sleep 1; reboot ) &
+reply "200 OK" "features updated — rebooting now"

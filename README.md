@@ -11,7 +11,7 @@ A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio recei
   - **Client** — joins your home WiFi (use it on your home stereo, pull updates over the internet)
 - **Web management UI** at `http://10.0.10.1` — change network mode, push updates, restart, roll back; works from a phone or laptop
 - **In-place updates** with auto-rollback — never pull the SD card again. Drop the device behind your stereo and forget it. Apkovl uploads are version-checked against the running modloop so you can't accidentally install a binary-incompatible build
-- **Optional LCD** — Pimoroni Pirate Audio and Adafruit Mini PiTFT show track + artist + album art when music's playing
+- **Optional display** — small SPI screens (Pimoroni Pirate Audio, Adafruit Mini PiTFT) or any HDMI monitor; shows album art, title, artist, and a live progress bar
 - **Toggle features off for faster boot** — disable Bluetooth, SSH, or the display from the web UI. Each unused subsystem off saves a few seconds
 - **Boot timer** — live measurement of how long it took to reach "ready" (AP up + AirPlay listening), shown on the console banner and in the web UI. Lets you see exactly what each toggle costs
 - **Runs entirely from RAM** (Alpine diskless) — survives hard power cuts (ignition off, breaker trip, kid yanks the plug). The SD card is read-only at runtime
@@ -91,9 +91,22 @@ Notes:
 - Roon and AirPlay both grab the audio device exclusively, so only one will play at a time. If you only use Roon, disable AirPlay-related stuff in alphasound.txt to save boot time.
 - Roon Bridge needs internet for licensing checks and to find your Roon Core, so it only runs when the device is in client mode.
 
-### Pirate Audio screen
+### Display
 
-If you have a Pimoroni Pirate Audio (any variant), set `ALPHASOUND_DISPLAY=pirate-audio` in `alphasound.txt`. The 240×240 LCD then shows the current track's title, artist, and cover art whenever something's AirPlaying. SPI is enabled in `usercfg.txt` by default so no extra setup needed. Leave `ALPHASOUND_DISPLAY=none` to skip the display service entirely (saves a few seconds on boot).
+The web UI's Features section has a Display dropdown. Pick one:
+
+- **none** — display service doesn't run (saves boot time)
+- **hdmi** — render to whatever monitor's plugged into the Pi's HDMI port. Takes over the console while running. Switch back to `none` from the web UI to get the console back on next boot.
+- **pirate-audio**, **adafruit-1.3-tft** (240×240 ST7789), **adafruit-mini-pitft** (240×135 landscape) — small SPI displays, no monitor needed
+
+What gets rendered (all backends):
+
+- Album art (when the source provides it)
+- Track title + artist + album
+- Live progress bar with elapsed / total time
+- Layout adapts to the screen — big-screen layout on HDMI (art on left, info large on right), compact on small SPI panels
+
+Sources fed to the display today: AirPlay (via shairport-sync's metadata pipe). Bluetooth A2DP doesn't carry rich metadata so it doesn't show track info, just plays. Roon metadata isn't yet wired in (would need a Roon API extension — bigger piece of work).
 
 ## Development mode
 

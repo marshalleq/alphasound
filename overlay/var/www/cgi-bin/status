@@ -23,11 +23,17 @@ DEV_SSID=$(config_get ALPHASOUND_DEV_WIFI_SSID)
 FEAT_BT=$(config_get ALPHASOUND_BLUETOOTH)
 FEAT_SSH=$(config_get ALPHASOUND_SSHD)
 FEAT_DISPLAY=$(config_get ALPHASOUND_DISPLAY)
+FEAT_OUTPUT=$(config_get ALPHASOUND_OUTPUT_DEVICE)
 FEAT_ROON=$(config_get ALPHASOUND_ROON)
 [ -z "$FEAT_BT" ] && FEAT_BT=yes
 [ -z "$FEAT_SSH" ] && FEAT_SSH=yes
 [ -z "$FEAT_DISPLAY" ] && FEAT_DISPLAY=none
+[ -z "$FEAT_OUTPUT" ] && FEAT_OUTPUT=auto
 [ -z "$FEAT_ROON" ] && FEAT_ROON=no
+# The UI dropdown only knows auto and hdmi. If the user has hand-set a
+# raw hw:... value, report it as 'auto' so their edit isn't clobbered
+# the next time they hit Apply without touching the dropdown.
+case "$FEAT_OUTPUT" in auto|hdmi) ;; *) FEAT_OUTPUT=auto ;; esac
 ROON_INSTALLED=false
 [ -f /media/mmcblk0p1/persist/roon/RoonBridge.tar.bz2 ] && ROON_INSTALLED=true
 
@@ -57,6 +63,7 @@ Cache-Control: no-store
     "bluetooth": "$FEAT_BT",
     "sshd":      "$FEAT_SSH",
     "display":   "$FEAT_DISPLAY",
+    "output":    "$FEAT_OUTPUT",
     "roon":      "$FEAT_ROON"
   },
   "roon_installed": $ROON_INSTALLED,

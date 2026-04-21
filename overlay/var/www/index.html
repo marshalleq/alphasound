@@ -58,11 +58,22 @@ input[type=file] { width: 100%; padding: 0.4rem; }
     <label>Display
       <select name="display" id="feat_display">
         <option value="none">none</option>
+        <option value="hdmi">HDMI (uses any monitor)</option>
         <option value="pirate-audio">Pimoroni Pirate Audio (240×240)</option>
         <option value="adafruit-1.3-tft">Adafruit 1.3" TFT (240×240)</option>
         <option value="adafruit-mini-pitft">Adafruit Mini PiTFT (240×135)</option>
       </select>
     </label>
+    <span class="muted">HDMI takes over the console.</span>
+  </p>
+  <p>
+    <label>Audio output
+      <select name="output" id="feat_output">
+        <option value="auto">Auto (prefer DAC / USB, fall back to HDMI)</option>
+        <option value="hdmi">Force HDMI</option>
+      </select>
+    </label>
+    <span class="muted">Pirate Audio implicitly enables its HAT DAC.</span>
   </p>
   <button id="apply-features" type="button">Apply &amp; reboot</button>
 </form>
@@ -218,6 +229,7 @@ async function refreshStatus() {
         $('feat_bt').checked = (s.features.bluetooth === 'yes');
         $('feat_ssh').checked = (s.features.sshd === 'yes');
         $('feat_display').value = s.features.display || 'none';
+        $('feat_output').value = s.features.output === 'hdmi' ? 'hdmi' : 'auto';
         $('feat_roon').checked = (s.features.roon === 'yes');
         // Only allow enabling Roon if the binary is installed
         $('feat_roon').disabled = !s.roon_installed;
@@ -334,6 +346,7 @@ $('apply-features').onclick = async () => {
   fd.set('bluetooth', $('feat_bt').checked ? 'yes' : 'no');
   fd.set('sshd', $('feat_ssh').checked ? 'yes' : 'no');
   fd.set('display', $('feat_display').value);
+  fd.set('output', $('feat_output').value);
   fd.set('roon', $('feat_roon').checked ? 'yes' : 'no');
   log('applying…');
   try {
