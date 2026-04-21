@@ -64,6 +64,12 @@ ALPHASOUND_SSHD=yes
 #   adafruit-mini-pitft      Adafruit Mini PiTFT 1.14" (#4393) — 240x135 ST7789
 ALPHASOUND_DISPLAY=none
 
+# Backlight brightness 0-100 (Pirate Audio only). Pi Zero 2 W drives
+# GPIO 13 via hardware PWM1; reducing duty cycle cuts literal backlight
+# output, which deepens blacks on dark album art (the cheap IPS panel
+# can't block much light otherwise). 100 = full brightness.
+ALPHASOUND_DISPLAY_BRIGHTNESS=50
+
 # Roon Bridge endpoint — turns the device into a Roon-compatible audio
 # zone. Requires client mode (needs to reach your Roon Core) and a
 # one-time install via the web UI's "Install Roon Bridge" button (which
