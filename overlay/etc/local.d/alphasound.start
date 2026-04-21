@@ -16,6 +16,7 @@ ALPHASOUND_VOLUME_MAX_DB="-3.00"
 ALPHASOUND_BLUETOOTH="yes"
 ALPHASOUND_SSHD="yes"
 ALPHASOUND_DISPLAY="none"
+ALPHASOUND_DISPLAY_BRIGHTNESS="50"
 ALPHASOUND_ROON="no"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
 ALPHASOUND_DEV_WIFI_SSID=""
@@ -292,6 +293,31 @@ start_roon
 checkpoint roon-ready
 
 if [ "$ALPHASOUND_DISPLAY" != "none" ] && [ -n "$ALPHASOUND_DISPLAY" ]; then
+    # PWM backlight dimming for Pirate Audio — cuts physical backlight
+    # output so near-black pixels don't look grey. Requires the
+    # pwm-2chan dtoverlay (setfeatures adds it to usercfg.txt when
+    # display=pirate-audio). Must happen *before* the display service
+    # starts so Python sees PWM as active and skips its GPIO grab on
+    # pin 13.
+    if [ "$ALPHASOUND_DISPLAY" = "pirate-audio" ] && [ -d /sys/class/pwm/pwmchip0 ]; then
+        BRIGHT=${ALPHASOUND_DISPLAY_BRIGHTNESS:-50}
+        case "$BRIGHT" in *[!0-9]*|"") BRIGHT=50 ;; esac
+        [ "$BRIGHT" -gt 100 ] && BRIGHT=100
+        [ "$BRIGHT" -lt 0 ] && BRIGHT=0
+        [ -e /sys/class/pwm/pwmchip0/pwm1 ] || \
+            echo 1 > /sys/class/pwm/pwmchip0/export 2>/dev/null
+        if [ -e /sys/class/pwm/pwmchip0/pwm1 ]; then
+            PERIOD=10000000   # 10ms = 100 Hz, well above flicker threshold
+            DUTY=$(( PERIOD * BRIGHT / 100 ))
+            echo "$PERIOD" > /sys/class/pwm/pwmchip0/pwm1/period
+            echo "$DUTY"   > /sys/class/pwm/pwmchip0/pwm1/duty_cycle
+            echo 1         > /sys/class/pwm/pwmchip0/pwm1/enable
+            log "backlight PWM: ${BRIGHT}% (period=${PERIOD}ns duty=${DUTY}ns)"
+        else
+            log "backlight PWM unavailable — check dtoverlay=pwm-2chan in usercfg.txt"
+        fi
+    fi
+
     log "starting display service ($ALPHASOUND_DISPLAY)"
     # openrc auto-sources /etc/conf.d/<service> for envs that get exported
     # to the service's command. Write the chosen device there.

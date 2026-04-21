@@ -84,6 +84,9 @@ update_usercfg() {
         printf '# are overwritten on every Apply.\n'
         if [ "$DISPLAY" = "pirate-audio" ]; then
             printf 'dtoverlay=hifiberry-dac\n'
+            # PWM1 on GPIO 13 (ALT0) for backlight dimming. Brightness
+            # level lives in alphasound.txt (ALPHASOUND_DISPLAY_BRIGHTNESS).
+            printf 'dtoverlay=pwm-2chan,pin2=13,func2=4\n'
         fi
         printf '# <<< alphasound-managed <<<\n'
     } >> "$tmp"

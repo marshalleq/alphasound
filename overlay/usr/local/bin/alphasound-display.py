@@ -23,7 +23,7 @@ import sys
 import time
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 SPI_IOC_WR_MODE = 0x40016B01
 SPI_IOC_WR_MAX_SPEED_HZ = 0x40046B04
@@ -78,6 +78,16 @@ class PiGPIO:
         self.mem[reg:reg + 4] = (1 << pin).to_bytes(4, "little")
 
 
+def _pwm_driving_backlight():
+    """True iff the PWM1 channel is exported and enabled — indicating
+    alphasound.start has taken over the backlight via hardware PWM."""
+    try:
+        with open("/sys/class/pwm/pwmchip0/pwm1/enable") as f:
+            return f.read().strip() == "1"
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # ST7789 (SPI) backend
 # ---------------------------------------------------------------------------
@@ -130,8 +140,13 @@ class ST7789Display:
         self.bl_pin = cfg["bl_pin"]
         self.gpio = PiGPIO()
         self.gpio.setup_output(self.dc_pin)
-        self.gpio.setup_output(self.bl_pin)
-        self.gpio.set(self.bl_pin, True)
+        # If hardware PWM is already driving the backlight pin (via
+        # dtoverlay=pwm-2chan + sysfs setup in alphasound.start), leave
+        # it alone — reclaiming the pin as GPIO would kill the PWM mux.
+        # Otherwise, fall back to plain GPIO-high (full brightness).
+        if not _pwm_driving_backlight():
+            self.gpio.setup_output(self.bl_pin)
+            self.gpio.set(self.bl_pin, True)
         self._init_panel()
 
     def _dc(self, high):
@@ -146,9 +161,29 @@ class ST7789Display:
 
     def _init_panel(self):
         self._send(CMD_SWRESET); time.sleep(0.15)
-        self._send(CMD_SLPOUT); time.sleep(0.05)
+        self._send(CMD_SLPOUT); time.sleep(0.12)
         self._send(CMD_MADCTL, self.cfg["madctl"])
         self._send(CMD_COLMOD, 0x55)  # 16-bit RGB565
+        # Pimoroni-tuned porch / gate / VCOM / power / gamma. The chip's
+        # power-on defaults give a noticeably flatter, dimmer image than
+        # this sequence does on Pirate Audio — and usually on similar
+        # ST7789 panels (Adafruit variants) too. If a panel looks off on
+        # this block, its gamma (0xE0/0xE1) is the knob to reach for.
+        self._send(0xB2, [0x0C, 0x0C, 0x00, 0x33, 0x33])   # PORCTRL
+        self._send(0xB7, 0x35)                              # GCTRL
+        self._send(0xBB, 0x19)                              # VCOMS
+        self._send(0xC0, 0x2C)                              # LCMCTRL
+        self._send(0xC2, 0x01)                              # VDVVRHEN
+        self._send(0xC3, 0x12)                              # VRHS
+        self._send(0xC4, 0x20)                              # VDVS
+        self._send(0xC6, 0x0F)                              # FRCTRL2 60 Hz
+        self._send(0xD0, [0xA4, 0xA1])                      # PWCTRL1
+        self._send(0xE0, [0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B,
+                          0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B,
+                          0x1F, 0x23])                      # PVGAMCTRL
+        self._send(0xE1, [0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C,
+                          0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F,
+                          0x20, 0x23])                      # NVGAMCTRL
         self._send(CMD_INVON)
         self._send(CMD_NORON)
         self._send(CMD_DISPON); time.sleep(0.05)
@@ -160,6 +195,18 @@ class ST7789Display:
             image = image.resize((w, h))
         if image.mode != "RGB":
             image = image.convert("RGB")
+        # Panel compensation. Applied here (not in render) because it
+        # compensates for the panel, not the source.
+        #   gamma 1.25  — counters the panel's lifted shadows (IPS black
+        #                 level can't actually block backlight). Pulls
+        #                 darks down; barely touches highlights.
+        #   colour 1.35 — ST7789 + RGB565 looks desaturated otherwise.
+        #   sharp  1.2  — recovers edge definition lost to 240×240 scale.
+        arr = np.asarray(image, dtype=np.float32) / 255.0
+        arr = arr ** 1.25
+        image = Image.fromarray((arr * 255).clip(0, 255).astype(np.uint8))
+        image = ImageEnhance.Color(image).enhance(1.35)
+        image = ImageEnhance.Sharpness(image).enhance(1.2)
 
         x0, x1 = ox, ox + w - 1
         y0, y1 = oy, oy + h - 1
@@ -284,6 +331,56 @@ def fmt_time(seconds):
     return f"{m}:{s:02d}"
 
 
+def _dominant_dark_color(img, max_luminance=0.28):
+    """Pick a dark, reasonably-common colour from the image to tint the
+    text gradient with. Clamped below max_luminance so white text stays
+    legible — if the whole album is bright we darken the dominant pick
+    rather than letting the gradient wash out."""
+    quant = img.resize((64, 64)).quantize(colors=8)
+    palette = quant.getpalette()
+    by_count = sorted(quant.getcolors() or [], reverse=True)
+    for _, idx in by_count:
+        r, g, b = palette[idx * 3:idx * 3 + 3]
+        lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        if lum <= max_luminance:
+            return (r, g, b)
+    if by_count:
+        _, idx = by_count[0]
+        r, g, b = palette[idx * 3:idx * 3 + 3]
+        lum = max((0.299 * r + 0.587 * g + 0.114 * b) / 255, 0.01)
+        scale = max_luminance / lum
+        return (int(r * scale), int(g * scale), int(b * scale))
+    return (0, 0, 0)
+
+
+def _fit_cover(img, w, h):
+    """Scale img to cover a w×h box, centre-cropping any overflow."""
+    iw, ih = img.size
+    if iw * h > ih * w:
+        nw, nh = max(w, int(iw * h / ih)), h
+        img = img.resize((nw, nh))
+        left = (nw - w) // 2
+        return img.crop((left, 0, left + w, h))
+    nw, nh = w, max(h, int(ih * w / iw))
+    img = img.resize((nw, nh))
+    top = (nh - h) // 2
+    return img.crop((0, top, w, top + h))
+
+
+def _bottom_gradient(width, height, color, peak_alpha=245):
+    """Build an RGBA overlay, transparent at the top, `color` at
+    `peak_alpha` opacity at the bottom. Gamma <1 pushes opacity up
+    quickly so text in the middle of the band is still well-covered."""
+    t = np.linspace(0, 1, height, dtype=np.float32) ** 0.85
+    alpha = (t * peak_alpha).astype(np.uint8)
+    arr = np.empty((height, width, 4), dtype=np.uint8)
+    arr[:, :, 0] = color[0]
+    arr[:, :, 1] = color[1]
+    arr[:, :, 2] = color[2]
+    arr[:, :, 3] = alpha[:, None]
+    return Image.fromarray(arr, "RGBA")
+
+
 def render(disp, state, fonts):
     w, h = disp.cfg["width"], disp.cfg["height"]
     img = Image.new("RGB", (w, h), (12, 12, 16))
@@ -332,21 +429,24 @@ def render(disp, state, fonts):
         _draw_progress(draw, fonts, 40, h - 50, w - 80, pos, dur)
 
     elif w >= h - 20:
-        # Squareish — art on top, text below
-        info_h = max(70, h // 4)
-        art_max = h - info_h - 8
+        # Squareish — full-bleed art with a dominant-colour gradient
+        # overlay at the bottom that the text sits in.
+        gradient_h = int(h * 0.42)
         if art_img:
-            art_img.thumbnail((w, art_max))
-            x = (w - art_img.width) // 2
-            img.paste(art_img, (x, 0))
-            text_y = art_img.height + 8
+            bg = _fit_cover(art_img, w, h)
+            img.paste(bg, (0, 0))
+            tint = _dominant_dark_color(bg)
         else:
-            text_y = 8
+            tint = (0, 0, 0)
+        overlay = _bottom_gradient(w, gradient_h, tint)
+        img.paste(overlay, (0, h - gradient_h), overlay)
+
+        text_y = h - gradient_h + 14
         if title:
-            draw.text((6, text_y), title[:40], fill=(255, 255, 255), font=fonts["title"]); text_y += 22
+            draw.text((10, text_y), title[:32], fill=(255, 255, 255), font=fonts["title"]); text_y += 24
         if artist:
-            draw.text((6, text_y), artist[:40], fill=(180, 180, 180), font=fonts["body"]); text_y += 18
-        _draw_progress(draw, fonts, 6, h - 14, w - 12, pos, dur)
+            draw.text((10, text_y), artist[:34], fill=(225, 225, 225), font=fonts["body"])
+        _draw_progress(draw, fonts, 8, h - 14, w - 16, pos, dur)
 
     else:
         # Wide-but-short panels (e.g. 240x135) — text only, no art
