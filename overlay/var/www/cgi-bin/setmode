@@ -76,10 +76,9 @@ fi
 sync
 mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
 
+( sleep 1; reboot ) &
 if [ "$MODE" = "RUN" ]; then
     reply "200 OK" "switched to AP mode — rebooting now"
 else
     reply "200 OK" "switched to client mode (joining $SSID) — rebooting now. If credentials are wrong, the device falls back to AP mode automatically."
 fi
-
-( sleep 1; reboot ) &

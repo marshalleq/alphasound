@@ -59,6 +59,5 @@ rm -f "$BOOT/.boot_count"
 sync
 mount -o remount,ro "$BOOT" 2>/dev/null || true
 
-reply "200 OK" "downloaded and applied — rebooting now. Reconnect in ~30s."
-
 ( sleep 1; reboot ) &
+reply "200 OK" "downloaded and applied — rebooting now. Reconnect in ~30s."

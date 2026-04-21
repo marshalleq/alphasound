@@ -27,9 +27,9 @@ ALPHASOUND_CHANNEL=11
 # Country code for WiFi regulatory domain (e.g. NZ, US, GB, IE, AU)
 ALPHASOUND_COUNTRY=NZ
 
-# ALSA output device. "auto" picks the first non-built-in card it finds
-# (USB DAC, HAT DAC, etc.) and falls back to hw:0 if none. Override with a
-# specific value if the auto pick is wrong:
+# ALSA output device. Also settable from the web UI Features panel.
+#   auto                      Prefer DAC / USB; fall back to bcm2835 HDMI
+#   hdmi                      Force HDMI (ignore any DAC that's present)
 #   hw:0                      Pi onboard 3.5mm or HAT DAC at card 0
 #   hw:1                      USB DAC (typical when also using onboard)
 #   hw:CARD=USB               USB DAC by name (resilient to renumbering)
@@ -51,10 +51,14 @@ ALPHASOUND_BLUETOOTH=yes
 # AirPlay/BT use. Off saves ~1-2s and reduces attack surface.
 ALPHASOUND_SSHD=yes
 
-# Display: shows current track + album art on a small SPI LCD when
-# something's AirPlaying. "none" disables the service entirely.
+# Display: shows current track + album art + progress bar when something's
+# AirPlaying. "none" disables the display service entirely.
 # Supported values:
 #   none                     no display
+#   hdmi                     render to whatever's plugged into HDMI (takes
+#                            over the console for as long as it's running;
+#                            switch back to "none" via the web UI to get
+#                            the console back on next boot)
 #   pirate-audio             Pimoroni Pirate Audio (any variant) — 240x240 ST7789
 #   adafruit-1.3-tft         Adafruit 1.3" TFT (#2090) — 240x240 ST7789
 #   adafruit-mini-pitft      Adafruit Mini PiTFT 1.14" (#4393) — 240x135 ST7789
