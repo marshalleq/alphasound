@@ -22,10 +22,11 @@ ALPINE_ARCH="aarch64"
 ALPINE_TARBALL="alpine-rpi-${ALPINE_RELEASE}-${ALPINE_ARCH}.tar.gz"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${ALPINE_ARCH}/${ALPINE_TARBALL}"
 
-PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
+PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils \
           wpa_supplicant jq busybox-extras \
           python3 py3-pillow py3-numpy py3-libgpiod font-noto \
+          v4l-utils \
           gcompat bzip2"
 
 # Runlevels: sysinit + shutdown are critical. sysinit mounts devfs and the

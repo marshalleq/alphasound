@@ -6,7 +6,7 @@ One image, two very different installs — both supported by the same config, sw
 
 ### Head-unit mode (home / desk)
 
-Plug it into your HDMI TV or monitor, pick a DAC HAT (or don't — USB DAC / HDMI audio / onboard are all fine), and you get a full-screen now-playing UI with album art, artist, and track progress. Use it like a cheap Ropieee replacement on a monitor next to your stereo. HDMI-CEC support means the TV remote can skip tracks and change volume *(landing soon)*.
+Plug it into your HDMI TV or monitor, pick a DAC HAT (or don't — USB DAC / HDMI audio / onboard are all fine), and you get a full-screen now-playing UI with album art, artist, and track progress. Use it like a cheap Ropieee replacement on a monitor next to your stereo. **HDMI-CEC is active whenever `display=hdmi`** — press Play / Pause / Skip / Volume on the TV remote and it's relayed back to the streaming phone via DACP, so the person streaming gets actual Apple-remote behaviour without touching their device.
 
 ### Behind-the-dash mode (car / invisible install)
 
