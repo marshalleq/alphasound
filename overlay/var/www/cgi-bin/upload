@@ -29,8 +29,18 @@ trap 'rm -f "$TMP"' EXIT
 # Stream stdin to a temp file
 head -c "$CONTENT_LENGTH" > "$TMP"
 
-# Sanity-check it's actually a valid gzipped tar
-tar -tzf "$TMP" >/dev/null 2>&1 || reply "400 Bad Request" "uploaded file is not a valid tar.gz"
+# Accept either a gzipped tar (normal) or a bare tar (some OSes strip
+# the .gz on download). Re-gzip the bare case so the boot-time apkovl
+# reader, which only knows .tar.gz, is happy.
+if tar -tzf "$TMP" >/dev/null 2>&1; then
+    :
+elif tar -tf "$TMP" >/dev/null 2>&1; then
+    gzip -c "$TMP" > "$TMP.gz" 2>/dev/null \
+        || reply "500 Internal Server Error" "re-gzip failed"
+    mv "$TMP.gz" "$TMP"
+else
+    reply "400 Bad Request" "uploaded file is not a valid tar or tar.gz"
+fi
 
 # Refuse apkovls built against a different Alpine major version
 . /etc/alphasound/apkovl-check.sh
