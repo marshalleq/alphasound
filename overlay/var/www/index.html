@@ -55,6 +55,24 @@ input[type=file] { width: 100%; padding: 0.4rem; }
   <p><label><input type="checkbox" name="sshd" id="feat_ssh" value="yes"> SSH server</label></p>
   <p><label><input type="checkbox" name="roon" id="feat_roon" value="yes" disabled> Roon Bridge endpoint <span class="muted" id="roon-note">(install first)</span></label></p>
   <p>
+    <label>Audio HAT
+      <select name="dac" id="feat_dac">
+        <option value="none">none (USB DAC / HDMI / no HAT)</option>
+        <option value="hifiberry-dac">HiFiBerry DAC · Pirate Audio (all) · IQaudIO Pi-DAC · JustBoom DAC</option>
+        <option value="hifiberry-dacplus">HiFiBerry DAC+ family · MiniAmp · Beocreate</option>
+        <option value="hifiberry-dacplushd">HiFiBerry DAC2 HD</option>
+        <option value="hifiberry-digi">HiFiBerry Digi+ (S/PDIF)</option>
+        <option value="hifiberry-amp">HiFiBerry Amp+ / Amp2 (drives speakers directly)</option>
+        <option value="iqaudio-dacplus">IQaudIO DAC+ family</option>
+        <option value="iqaudio-digi-wm8804-audio">IQaudIO Digi</option>
+        <option value="allo-boss-dac-pcm512x-audio">Allo Boss DAC</option>
+        <option value="audioinjector-wm8731-audio">Audio Injector Stereo</option>
+        <option value="googlevoicehat-soundcard">Google AIY Voice HAT</option>
+      </select>
+    </label>
+    <span class="muted">Independent of display — pick a DAC with no screen for behind-dash installs.</span>
+  </p>
+  <p>
     <label>Display
       <select name="display" id="feat_display">
         <option value="none">none</option>
@@ -73,7 +91,6 @@ input[type=file] { width: 100%; padding: 0.4rem; }
         <option value="hdmi">Force HDMI</option>
       </select>
     </label>
-    <span class="muted">Pirate Audio implicitly enables its HAT DAC.</span>
   </p>
   <p>
     <label>Display brightness
@@ -236,6 +253,15 @@ async function refreshStatus() {
         $('feat_bt').checked = (s.features.bluetooth === 'yes');
         $('feat_ssh').checked = (s.features.sshd === 'yes');
         $('feat_display').value = s.features.display || 'none';
+        // Back-compat nudge: old builds implicitly enabled hifiberry-dac
+        // when display=pirate-audio. If the user upgrades and DAC is
+        // still unset, pre-select hifiberry-dac so they don't silently
+        // lose audio the next time they hit Apply.
+        let dac = s.features.dac || 'none';
+        if (dac === 'none' && $('feat_display').value === 'pirate-audio') {
+          dac = 'hifiberry-dac';
+        }
+        $('feat_dac').value = dac;
         $('feat_output').value = s.features.output === 'hdmi' ? 'hdmi' : 'auto';
         const bright = (s.features.brightness ?? 50);
         $('feat_brightness').value = bright;
@@ -261,6 +287,14 @@ document.querySelectorAll('input[name=mode]').forEach(r => {
   r.addEventListener('change', e => {
     $('client-fields').style.display = (e.target.value === 'DEV') ? '' : 'none';
   });
+});
+
+// Nudge: picking Pirate Audio as a display usually means you have the
+// HAT's DAC too — pre-select it if the user hasn't picked one yet.
+$('feat_display').addEventListener('change', e => {
+  if (e.target.value === 'pirate-audio' && $('feat_dac').value === 'none') {
+    $('feat_dac').value = 'hifiberry-dac';
+  }
 });
 
 // Brightness: live label update while dragging, send to backend on release.
@@ -372,6 +406,7 @@ $('apply-features').onclick = async () => {
   fd.set('bluetooth', $('feat_bt').checked ? 'yes' : 'no');
   fd.set('sshd', $('feat_ssh').checked ? 'yes' : 'no');
   fd.set('display', $('feat_display').value);
+  fd.set('dac', $('feat_dac').value);
   fd.set('output', $('feat_output').value);
   fd.set('roon', $('feat_roon').checked ? 'yes' : 'no');
   log('applying…');

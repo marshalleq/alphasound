@@ -5,12 +5,19 @@
 #   bluetooth = yes|no
 #   sshd      = yes|no
 #   display   = none|hdmi|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft
+#   dac       = none|hifiberry-dac|hifiberry-dacplus|hifiberry-dacplushd|
+#               hifiberry-digi|hifiberry-amp|iqaudio-dacplus|
+#               iqaudio-digi-wm8804-audio|allo-boss-dac-pcm512x-audio|
+#               audioinjector-wm8731-audio|googlevoicehat-soundcard
 #   output    = auto|hdmi
 #   roon      = yes|no
 #
-# When display=pirate-audio, we also write a managed block into usercfg.txt
-# to uncomment dtoverlay=hifiberry-dac — the Pirate Audio HAT is that DAC
-# and has no HAT-spec EEPROM, so it can't announce itself to the firmware.
+# DAC is independent of display: behind-dash installs want a DAC with
+# no screen, desktop head-units want a screen with no HAT DAC, and
+# Pirate Audio wants both. We also write a managed block in usercfg.txt
+# so the selected overlay is loaded at boot (without the user editing
+# usercfg.txt by hand — Pirate Audio can't even announce itself via
+# HAT EEPROM, so it needs the overlay written explicitly).
 
 . /etc/alphasound/session.sh
 require_session
@@ -44,6 +51,7 @@ field() {
 BT=$(field bluetooth)
 SSH=$(field sshd)
 DISPLAY=$(field display)
+DAC=$(field dac)
 OUTPUT=$(field output)
 ROON=$(field roon)
 
@@ -53,6 +61,12 @@ case "$SSH" in yes|no) ;; *) reply "400 Bad Request" "sshd must be yes/no" ;; es
 case "$ROON" in yes|no) ;; *) reply "400 Bad Request" "roon must be yes/no" ;; esac
 case "$DISPLAY" in none|hdmi|pirate-audio|adafruit-1.3-tft|adafruit-mini-pitft) ;;
     *) reply "400 Bad Request" "display value not recognised" ;;
+esac
+case "$DAC" in
+    none|hifiberry-dac|hifiberry-dacplus|hifiberry-dacplushd|hifiberry-digi|hifiberry-amp| \
+    iqaudio-dacplus|iqaudio-digi-wm8804-audio|allo-boss-dac-pcm512x-audio| \
+    audioinjector-wm8731-audio|googlevoicehat-soundcard) ;;
+    *) reply "400 Bad Request" "dac value not recognised" ;;
 esac
 case "$OUTPUT" in auto|hdmi) ;; *) reply "400 Bad Request" "output must be auto or hdmi" ;; esac
 
@@ -82,8 +96,10 @@ update_usercfg() {
         printf '\n# >>> alphasound-managed >>>\n'
         printf '# Auto-generated from the web UI. Edits inside this block\n'
         printf '# are overwritten on every Apply.\n'
+        if [ "$DAC" != "none" ]; then
+            printf 'dtoverlay=%s\n' "$DAC"
+        fi
         if [ "$DISPLAY" = "pirate-audio" ]; then
-            printf 'dtoverlay=hifiberry-dac\n'
             # Backlight PWM on GPIO 13 (ALT0 = PWM1). Use the single-
             # channel `pwm` overlay rather than `pwm-2chan` — the
             # latter's default PWM0 lives on GPIO 18, which hifiberry-dac
@@ -100,6 +116,7 @@ mount -o remount,rw /media/mmcblk0p1
 update_config ALPHASOUND_BLUETOOTH "$BT"
 update_config ALPHASOUND_SSHD "$SSH"
 update_config ALPHASOUND_DISPLAY "$DISPLAY"
+update_config ALPHASOUND_DAC "$DAC"
 update_config ALPHASOUND_OUTPUT_DEVICE "$OUTPUT"
 update_config ALPHASOUND_ROON "$ROON"
 update_usercfg
