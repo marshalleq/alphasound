@@ -152,9 +152,9 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 
 <section>
 <h2>Update from file</h2>
-<p class="muted">Pick a downloaded <code>alphasound.apkovl.tar.gz</code>. The previous version is kept as a backup and automatically restored if the new one fails to boot 3 times.</p>
+<p class="muted">Pick a downloaded <code>alphasound.apkovl.tar.gz</code> (or the bare <code>.tar</code> if your OS auto-extracted the wrapper). The previous version is kept as a backup and automatically restored if the new one fails to boot 3 times.</p>
 <div class="row">
-  <input type="file" id="file" accept=".tar.gz,.gz">
+  <input type="file" id="file" accept=".tar.gz,.tar,.gz">
   <button id="upload">Upload &amp; reboot</button>
 </div>
 </section>
