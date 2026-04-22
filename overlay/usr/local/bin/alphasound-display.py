@@ -20,10 +20,13 @@ import os
 import re
 import struct
 import sys
+import threading
 import time
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
+
+PWM_DUTY_PATH = "/sys/class/pwm/pwmchip0/pwm1/duty_cycle"
 
 SPI_IOC_WR_MODE = 0x40016B01
 SPI_IOC_WR_MAX_SPEED_HZ = 0x40046B04
@@ -144,10 +147,41 @@ class ST7789Display:
         # dtoverlay=pwm-2chan + sysfs setup in alphasound.start), leave
         # it alone — reclaiming the pin as GPIO would kill the PWM mux.
         # Otherwise, fall back to plain GPIO-high (full brightness).
-        if not _pwm_driving_backlight():
+        self._bl_via_pwm = _pwm_driving_backlight()
+        if not self._bl_via_pwm:
             self.gpio.setup_output(self.bl_pin)
             self.gpio.set(self.bl_pin, True)
+        self._saved_duty = None
         self._init_panel()
+
+    def blank(self):
+        """Cut the backlight (timeout). Panel content preserved."""
+        if self._bl_via_pwm:
+            try:
+                with open(PWM_DUTY_PATH) as f:
+                    self._saved_duty = f.read().strip()
+                with open(PWM_DUTY_PATH, "w") as f:
+                    f.write("0")
+                return
+            except OSError:
+                pass
+        try:
+            self.gpio.set(self.bl_pin, False)
+        except Exception:
+            pass
+
+    def unblank(self):
+        if self._bl_via_pwm and self._saved_duty is not None:
+            try:
+                with open(PWM_DUTY_PATH, "w") as f:
+                    f.write(self._saved_duty)
+                return
+            except OSError:
+                pass
+        try:
+            self.gpio.set(self.bl_pin, True)
+        except Exception:
+            pass
 
     def _dc(self, high):
         self.gpio.set(self.dc_pin, bool(high))
@@ -237,6 +271,19 @@ class FBDisplay:
     Supports 16-bit RGB565 and 32-bit RGBA — the two common Pi modes."""
 
     backend = "hdmi"
+
+    def blank(self):
+        """No hardware backlight to cut — just render solid black."""
+        black = Image.new("RGB", (self.cfg["width"], self.cfg["height"]), (0, 0, 0))
+        try:
+            self.display(black)
+        except Exception:
+            pass
+
+    def unblank(self):
+        # Next render call from the main loop repaints.
+        pass
+
 
     def __init__(self):
         with open("/sys/class/graphics/fb0/virtual_size") as f:
@@ -499,6 +546,50 @@ def load_fonts():
 # ---------------------------------------------------------------------------
 
 
+class BlankController:
+    """Blanks the display after N seconds of no metadata activity,
+    unblanks on the first new event. Watchdog runs in a daemon thread
+    so the main loop can stay blocked on the shairport pipe read."""
+
+    def __init__(self, disp, timeout_sec):
+        self.disp = disp
+        self.timeout = int(timeout_sec or 0)
+        self.last_activity = time.time()
+        self.blanked = False
+        self._lock = threading.Lock()
+
+    def mark_activity(self):
+        with self._lock:
+            self.last_activity = time.time()
+            if self.blanked:
+                try:
+                    self.disp.unblank()
+                except Exception as e:
+                    print(f"unblank failed: {e}", file=sys.stderr)
+                self.blanked = False
+
+    def _check(self):
+        with self._lock:
+            if self.blanked or self.timeout <= 0:
+                return
+            if time.time() - self.last_activity >= self.timeout:
+                try:
+                    self.disp.blank()
+                    self.blanked = True
+                    print(f"display: blanked after {self.timeout}s idle", file=sys.stderr)
+                except Exception as e:
+                    print(f"blank failed: {e}", file=sys.stderr)
+
+    def start_watchdog(self):
+        if self.timeout <= 0:
+            return
+        def loop():
+            while True:
+                time.sleep(min(5, max(1, self.timeout / 6)))
+                self._check()
+        threading.Thread(target=loop, daemon=True).start()
+
+
 def main():
     device_name = os.environ.get("ALPHASOUND_DISPLAY", "pirate-audio")
 
@@ -521,6 +612,9 @@ def main():
     pipe_path = "/tmp/shairport-sync-metadata"
     fonts = load_fonts()
 
+    blanker = BlankController(disp, os.environ.get("ALPHASOUND_DISPLAY_TIMEOUT", "0"))
+    blanker.start_watchdog()
+
     state = {}
     render(disp, state, fonts)
 
@@ -539,6 +633,7 @@ def main():
     last_progress_render = 0.0
 
     for code, payload in stream_items(pipe_path):
+        blanker.mark_activity()
         changed = False
         if code == "minm":
             state["title"] = payload.decode("utf-8", errors="replace"); changed = True

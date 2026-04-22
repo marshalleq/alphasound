@@ -10,6 +10,7 @@
 #               iqaudio-digi-wm8804-audio|allo-boss-dac-pcm512x-audio|
 #               audioinjector-wm8731-audio|googlevoicehat-soundcard
 #   output    = auto|hdmi
+#   timeout   = non-negative integer seconds (0 = never blank)
 #   roon      = yes|no
 #
 # DAC is independent of display: behind-dash installs want a DAC with
@@ -53,6 +54,7 @@ SSH=$(field sshd)
 DISPLAY=$(field display)
 DAC=$(field dac)
 OUTPUT=$(field output)
+TIMEOUT=$(field timeout)
 ROON=$(field roon)
 
 # Validate
@@ -69,6 +71,7 @@ case "$DAC" in
     *) reply "400 Bad Request" "dac value not recognised" ;;
 esac
 case "$OUTPUT" in auto|hdmi) ;; *) reply "400 Bad Request" "output must be auto or hdmi" ;; esac
+case "$TIMEOUT" in ""|*[!0-9]*) reply "400 Bad Request" "timeout must be a non-negative integer" ;; esac
 
 update_config() {
     key=$1
@@ -118,6 +121,7 @@ update_config ALPHASOUND_SSHD "$SSH"
 update_config ALPHASOUND_DISPLAY "$DISPLAY"
 update_config ALPHASOUND_DAC "$DAC"
 update_config ALPHASOUND_OUTPUT_DEVICE "$OUTPUT"
+update_config ALPHASOUND_DISPLAY_TIMEOUT "$TIMEOUT"
 update_config ALPHASOUND_ROON "$ROON"
 update_usercfg
 sync

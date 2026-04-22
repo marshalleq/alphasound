@@ -99,6 +99,19 @@ input[type=file] { width: 100%; padding: 0.4rem; }
     </label>
     <span class="muted">Applies live (Pirate Audio only).</span>
   </p>
+  <p>
+    <label>Blank screen when idle
+      <select name="timeout" id="feat_timeout">
+        <option value="0">never</option>
+        <option value="30">after 30 seconds</option>
+        <option value="60">after 1 minute</option>
+        <option value="300">after 5 minutes</option>
+        <option value="900">after 15 minutes</option>
+        <option value="3600">after 1 hour</option>
+      </select>
+    </label>
+    <span class="muted">Re-wakes the moment music resumes.</span>
+  </p>
   <button id="apply-features" type="button">Apply &amp; reboot</button>
 </form>
 </section>
@@ -266,6 +279,11 @@ async function refreshStatus() {
         const bright = (s.features.brightness ?? 50);
         $('feat_brightness').value = bright;
         $('brightness_val').textContent = bright + '%';
+        // Snap to nearest supported option; any custom value via SSH
+        // falls back to "never" in the UI.
+        const timeoutOpts = ['0', '30', '60', '300', '900', '3600'];
+        const t = String(s.features.timeout ?? 0);
+        $('feat_timeout').value = timeoutOpts.includes(t) ? t : '0';
         $('feat_roon').checked = (s.features.roon === 'yes');
         // Only allow enabling Roon if the binary is installed
         $('feat_roon').disabled = !s.roon_installed;
@@ -408,6 +426,7 @@ $('apply-features').onclick = async () => {
   fd.set('display', $('feat_display').value);
   fd.set('dac', $('feat_dac').value);
   fd.set('output', $('feat_output').value);
+  fd.set('timeout', $('feat_timeout').value);
   fd.set('roon', $('feat_roon').checked ? 'yes' : 'no');
   log('applying…');
   try {
