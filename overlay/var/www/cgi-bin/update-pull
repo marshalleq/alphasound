@@ -51,13 +51,25 @@ fi
 . /etc/alphasound/apkovl-check.sh
 check_apkovl_compat "$TMP"
 
-mount -o remount,rw "$BOOT"
-mv "$APKOVL" "$BAK" 2>/dev/null || true
-mv "$TMP" "$APKOVL"
-touch "$BOOT/.boot_pending"
-rm -f "$BOOT/.boot_count"
-sync
-mount -o remount,ro "$BOOT" 2>/dev/null || true
+# Respond before the slow work — a 60+ MB swap+sync to FAT32 can
+# outrun busybox httpd's CGI timeout, and a killed CGI leaves the
+# client with "Empty reply from server" even though everything's fine.
+printf 'Status: 200 OK\r\n'
+printf 'Content-Type: text/plain\r\n\r\n'
+printf 'downloaded and applied — rebooting now. Reconnect in ~30s.\n'
 
-( sleep 1; reboot ) &
-reply "200 OK" "downloaded and applied — rebooting now. Reconnect in ~30s."
+trap - EXIT
+
+(
+    exec >/dev/null 2>&1 </dev/null
+    mount -o remount,rw "$BOOT"
+    mv "$APKOVL" "$BAK" 2>/dev/null || true
+    mv "$TMP" "$APKOVL"
+    touch "$BOOT/.boot_pending"
+    rm -f "$BOOT/.boot_count"
+    sync
+    mount -o remount,ro "$BOOT" 2>/dev/null || true
+    reboot
+) &
+
+exit 0

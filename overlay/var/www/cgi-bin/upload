@@ -2,6 +2,15 @@
 # Accept a raw apkovl tarball POST'd to stdin, validate, swap atomically,
 # arm the rollback flag, and reboot. The web UI sends raw bytes (not
 # multipart/form-data) so we don't need any multipart parsing in shell.
+#
+# Ordering is deliberate: validate first, reply 200 OK next, *then*
+# background the swap+sync+reboot. A 60+ MB apkovl copy from tmpfs to
+# FAT32 plus sync takes tens of seconds on a Pi Zero 2 W, and busybox
+# httpd's CGI read timeout will otherwise fire before we get to write
+# the response — the browser then sees "Empty reply from server" even
+# though the upload itself succeeded. Detaching the backgrounded
+# subshell from httpd's stdio lets the parent exit cleanly so httpd
+# flushes the response to the client.
 
 . /etc/alphasound/session.sh
 require_session
@@ -46,15 +55,26 @@ fi
 . /etc/alphasound/apkovl-check.sh
 check_apkovl_compat "$TMP"
 
-# Swap
-mount -o remount,rw "$BOOT"
-mv "$APKOVL" "$BAK" 2>/dev/null || true
-mv "$TMP" "$APKOVL"
-touch "$BOOT/.boot_pending"
-rm -f "$BOOT/.boot_count"
-sync
-mount -o remount,ro "$BOOT" 2>/dev/null || true
+# Respond before the slow work (see header comment).
+printf 'Status: 200 OK\r\n'
+printf 'Content-Type: text/plain\r\n\r\n'
+printf 'update received — swapping apkovl and rebooting. Reconnect to the AP in ~30s.\n'
 
-# Reboot in background so the response goes out first.
-( sleep 1; reboot ) &
-reply "200 OK" "update applied — rebooting now. Reconnect to the AP in ~30s."
+# Subshell will own the temp file now; disable the parent's cleanup trap.
+trap - EXIT
+
+# Detach from httpd's stdio so the parent can exit cleanly (letting
+# httpd flush the response), while the slow SD swap + sync continues.
+(
+    exec >/dev/null 2>&1 </dev/null
+    mount -o remount,rw "$BOOT"
+    mv "$APKOVL" "$BAK" 2>/dev/null || true
+    mv "$TMP" "$APKOVL"
+    touch "$BOOT/.boot_pending"
+    rm -f "$BOOT/.boot_count"
+    sync
+    mount -o remount,ro "$BOOT" 2>/dev/null || true
+    reboot
+) &
+
+exit 0
