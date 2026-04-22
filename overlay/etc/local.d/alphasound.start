@@ -17,6 +17,7 @@ ALPHASOUND_BLUETOOTH="yes"
 ALPHASOUND_SSHD="yes"
 ALPHASOUND_DISPLAY="none"
 ALPHASOUND_DISPLAY_BRIGHTNESS="50"
+ALPHASOUND_DISPLAY_TIMEOUT="0"
 ALPHASOUND_DAC="none"
 ALPHASOUND_ROON="no"
 ALPHASOUND_ROOT_PASSWORD="alphasound"
@@ -325,6 +326,7 @@ if [ "$ALPHASOUND_DISPLAY" != "none" ] && [ -n "$ALPHASOUND_DISPLAY" ]; then
     mkdir -p /etc/conf.d
     cat > /etc/conf.d/alphasound-display << EOF
 export ALPHASOUND_DISPLAY="$ALPHASOUND_DISPLAY"
+export ALPHASOUND_DISPLAY_TIMEOUT="$ALPHASOUND_DISPLAY_TIMEOUT"
 EOF
     timeout 10 rc-service alphasound-display start \
         || log "alphasound-display start failed/timed out"

@@ -88,6 +88,14 @@ ALPHASOUND_DISPLAY=none
 # can't block much light otherwise). 100 = full brightness.
 ALPHASOUND_DISPLAY_BRIGHTNESS=50
 
+# Seconds of metadata inactivity before the display blanks. 0 = never
+# blank. Useful for in-dash installs where the screen should go dark
+# when music stops. Re-wakes the moment new metadata arrives.
+#   Pirate Audio: backlight PWM → 0% (instant, silent).
+#   Adafruit ST7789: BL pin → low.
+#   HDMI: framebuffer filled with black.
+ALPHASOUND_DISPLAY_TIMEOUT=0
+
 # Roon Bridge endpoint — turns the device into a Roon-compatible audio
 # zone. Requires client mode (needs to reach your Roon Core) and a
 # one-time install via the web UI's "Install Roon Bridge" button (which
