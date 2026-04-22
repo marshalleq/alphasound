@@ -1,37 +1,52 @@
 # Alphasound
 
-A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio receiver — for your car, your home stereo, that old amplifier in the garage, anywhere you want AirPlay or Bluetooth playback without buying a smart speaker. Based on [Alpine Linux](https://alpinelinux.org/), [shairport-sync](https://github.com/mikebrady/shairport-sync), and [BlueALSA](https://github.com/Arkq/bluez-alsa).
+A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio receiver — AirPlay + Bluetooth, with or without a screen, on any audio hardware you've got. Built on [Alpine Linux](https://alpinelinux.org/), [shairport-sync](https://github.com/mikebrady/shairport-sync), and [BlueALSA](https://github.com/Arkq/bluez-alsa).
+
+One image, two very different installs — both supported by the same config, switchable from the web UI:
+
+### Head-unit mode (home / desk)
+
+Plug it into your HDMI TV or monitor, pick a DAC HAT (or don't — USB DAC / HDMI audio / onboard are all fine), and you get a full-screen now-playing UI with album art, artist, and track progress. Use it like a cheap Ropieee replacement on a monitor next to your stereo. HDMI-CEC support means the TV remote can skip tracks and change volume *(landing soon)*.
+
+### Behind-the-dash mode (car / invisible install)
+
+No screen, no buttons, no monitor — just a DAC HAT wired straight to your car's speakers or line-in, boot time minimised, whole device hidden in the console. Especially good for **old cars with factory stereos you don't want to cut up**: the car keeps its original face and switches, but a HiFiBerry Amp2 / Pirate Audio Speakers / similar amplifier HAT *drives the speakers directly* and your phone streams AirPlay over the device's own WiFi. Your factory radio becomes optional — mechanical backup only.
+
+The DAC, the display, and the output routing are all **independent toggles** — so "DAC HAT with no screen" and "no HAT, just HDMI output" and "everything at once" are all first-class combinations.
 
 ## Highlights
 
 - **AirPlay + Bluetooth A2DP** in one device — Apple, Android, Linux, Windows clients all work
-- **Optional Roon Bridge endpoint** — pair the device with your Roon Core for high-end multi-room audio (one-tap install from the web UI when in client mode)
+- **Audio HAT dropdown** in the web UI — pick HiFiBerry / Pirate Audio / IQaudIO / Allo / Audio Injector / Google AIY and the overlay is written to `usercfg.txt` for you. Independent of the display choice.
+- **Amplifier HATs**: HiFiBerry Amp2 / Pirate Audio Stereo Speakers and similar HATs drive passive speakers directly — perfect for retrofitting an old car where you want to bypass the factory head unit entirely
+- **Optional display** — Pimoroni Pirate Audio (240×240 ST7789), Adafruit Mini PiTFT, or any HDMI monitor. Full-bleed album art with a dominant-colour gradient overlay, title / artist, live progress bar. PWM-dimmable backlight on Pirate Audio (slider in the web UI).
+- **Optional Roon Bridge endpoint** — one-tap install from the web UI when in client mode
 - **Two network modes**, switchable from the web UI:
   - **Standalone** — broadcasts its own WPA2 WiFi (perfect for a car: phone connects, cellular still handles data)
-  - **Client** — joins your home WiFi (use it on your home stereo, pull updates over the internet)
-- **Web management UI** at `http://10.0.10.1` — change network mode, push updates, restart, roll back; works from a phone or laptop
-- **In-place updates** with auto-rollback — never pull the SD card again. Drop the device behind your stereo and forget it. Apkovl uploads are version-checked against the running modloop so you can't accidentally install a binary-incompatible build
-- **Optional display** — small SPI screens (Pimoroni Pirate Audio, Adafruit Mini PiTFT) or any HDMI monitor; shows album art, title, artist, and a live progress bar
-- **Toggle features off for faster boot** — disable Bluetooth, SSH, or the display from the web UI. Each unused subsystem off saves a few seconds
-- **Boot timer** — live measurement of how long it took to reach "ready" (AP up + AirPlay listening), shown on the console banner and in the web UI. Lets you see exactly what each toggle costs
+  - **Client** — joins your home WiFi (useful at home for pulling updates, accessing SSH)
+- **Web management UI** at `http://10.0.10.1` — change network mode, flip feature toggles, adjust brightness, push updates, restart, roll back
+- **In-place updates** with auto-rollback — never pull the SD card again. Apkovls are version-checked against the running modloop so you can't install a binary-incompatible build
+- **Toggle features off for faster boot** — disable Bluetooth, SSH, Roon, or the display from the web UI. Each unused subsystem off saves a few seconds; boot timer on the banner + web UI shows exactly what it buys you
 - **Runs entirely from RAM** (Alpine diskless) — survives hard power cuts (ignition off, breaker trip, kid yanks the plug). The SD card is read-only at runtime
 - Boots in seconds on a Pi Zero 2 W
 - ~100 MB compressed image
 
 ## Audio hardware
 
-Works with most popular Pi audio HATs out of the box — pick the matching `dtoverlay=` line in `usercfg.txt`:
+Pick your HAT in the web UI (Features → Audio HAT) — no more hand-editing `usercfg.txt`. The dropdown covers:
 
-| Hardware | Notes |
-|---|---|
-| **Pimoroni Pirate Audio** (Headphone Amp / Line-Out / Stereo Speakers) | DAC + 240×240 LCD + 4 buttons in one. Set `ALPHASOUND_DISPLAY=pirate-audio` to enable the screen. |
-| **HiFiBerry DAC family** (DAC, DAC+, DAC+ Pro, DAC2 HD, MiniAmp, Beocreate) | Studio-grade audio output |
-| **HiFiBerry Digi+** | S/PDIF out for digital home stereos |
-| **HiFiBerry Amp+ / Amp2** | Built-in speaker amp |
-| **IQaudIO Pi-DAC, DAC+, Digi** | |
-| **Allo Boss DAC**, **JustBoom DAC**, **Audio Injector Stereo** | |
-| **Any USB DAC** | No config needed — auto-detected |
-| **HDMI audio** | Auto-fallback when nothing else is plugged in (handy for testing) |
+| Hardware | Overlay | Notes |
+|---|---|---|
+| **Pimoroni Pirate Audio** (Headphone Amp / Line-Out / Stereo Speakers) | `hifiberry-dac` | DAC + 240×240 LCD + 4 buttons. The Speakers variant drives 3W passive speakers directly. Pick *Pimoroni Pirate Audio* in the Display dropdown to also enable the screen. |
+| **HiFiBerry DAC family** (DAC, DAC+, DAC+ Pro, DAC+ Zero, DAC2 HD, MiniAmp, Beocreate) | `hifiberry-dac` / `hifiberry-dacplus` / `hifiberry-dacplushd` | Studio-grade line output |
+| **HiFiBerry Amp+ / Amp2** | `hifiberry-amp` | **Integrated class-D amplifier** — wire passive speakers straight in. Replaces the head unit entirely in a car retrofit. |
+| **HiFiBerry Digi+** | `hifiberry-digi` | S/PDIF optical / coax out for digital home stereos |
+| **IQaudIO Pi-DAC, DAC+ family** | `iqaudio-dacplus` | |
+| **IQaudIO Digi** | `iqaudio-digi-wm8804-audio` | |
+| **Allo Boss DAC** | `allo-boss-dac-pcm512x-audio` | |
+| **Audio Injector Stereo**, **Google AIY Voice HAT** | `audioinjector-wm8731-audio`, `googlevoicehat-soundcard` | |
+| **Any USB DAC** | *none* | No config — auto-detected, auto-preferred over HDMI |
+| **HDMI audio** | *none* | Auto-fallback when nothing else is plugged in; force with the Audio output → *Force HDMI* option |
 
 ## Hardware (otherwise)
 
@@ -45,14 +60,14 @@ Works with most popular Pi audio HATs out of the box — pick the matching `dtov
 1. Download the latest image from [Releases](../../releases)
 2. Flash to an SD card with [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
 3. Edit `alphasound.txt` on the SD card to set your WiFi name, country code, etc.
-4. If using a HAT DAC, uncomment the overlay line in `usercfg.txt`
-5. Insert into Pi, start the car
-6. Connect to the `Alphasound` WiFi on your phone
+4. Insert into Pi, power on (car ignition / desk USB)
+5. Connect to the `Alphasound` WiFi on your phone
+6. Open `http://10.0.10.1` → Features → pick your **Audio HAT** (if any) and **Display** (if any) → **Apply & reboot**
 7. Select `Alphasound` as an AirPlay output (Apple) or Bluetooth audio device (Android)
 
 ## Configuration
 
-Edit `alphasound.txt` on the SD card:
+Most users do everything through the web UI (`http://10.0.10.1` on the device's own WiFi, or the assigned IP in client mode). If you want to pre-seed settings before first boot, edit `alphasound.txt` on the SD card:
 
 ```ini
 ALPHASOUND_SSID=Alphasound
@@ -60,22 +75,18 @@ ALPHASOUND_PASSPHRASE=alphasound
 ALPHASOUND_NAME=Alphasound
 ALPHASOUND_CHANNEL=11
 ALPHASOUND_COUNTRY=NZ
-ALPHASOUND_OUTPUT_DEVICE=hw:0
+ALPHASOUND_DAC=none             # audio HAT overlay — see above table
+ALPHASOUND_DISPLAY=none         # none | hdmi | pirate-audio | adafruit-*
+ALPHASOUND_OUTPUT_DEVICE=auto   # auto | hdmi | hw:...
+ALPHASOUND_DISPLAY_BRIGHTNESS=50  # 0-100, Pirate Audio backlight PWM
 ALPHASOUND_VOLUME_MAX_DB=-3.00
 ALPHASOUND_BLUETOOTH=yes
 ALPHASOUND_ROOT_PASSWORD=alphasound
 ```
 
-**Change `ALPHASOUND_PASSPHRASE` and `ALPHASOUND_ROOT_PASSWORD` before driving** — both default to well-known values.
+**Change `ALPHASOUND_PASSPHRASE` and `ALPHASOUND_ROOT_PASSWORD` before driving** — both default to well-known values, and the device exposes sshd on its own WiFi AP.
 
-For DAC setup, edit `usercfg.txt` and uncomment ONE `dtoverlay=` line matching your hardware. Supported HATs include:
-
-- **HiFiBerry**: DAC, DAC+ family, DAC2 HD, Digi+, Amp+, Amp2, MiniAmp, Beocreate
-- **Pimoroni Pirate Audio**: Headphone Amp, Line-Out, Stereo Speakers (all use `hifiberry-dac`)
-- **IQaudIO**: Pi-DAC, DAC+, DAC+ Zero, Digi
-- **Allo Boss DAC**, **Audio Injector Stereo**, **Google AIY Voice HAT**, **JustBoom DAC**
-
-USB DACs work without any overlay. With no DAC at all, audio comes out HDMI (auto-detected).
+The web UI Features section owns `ALPHASOUND_DAC`, `ALPHASOUND_DISPLAY`, `ALPHASOUND_OUTPUT_DEVICE`, `ALPHASOUND_DISPLAY_BRIGHTNESS`, plus the Bluetooth / SSH / Roon toggles — Apply & reboot regenerates `usercfg.txt`'s alphasound-managed block with the correct dtoverlays. Manual edits above that block are preserved.
 
 ### Roon Bridge endpoint
 

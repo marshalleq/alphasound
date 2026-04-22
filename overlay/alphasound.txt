@@ -44,6 +44,24 @@ ALPHASOUND_VOLUME_MAX_DB=-3.00
 # Each one off saves a few seconds on boot. Safe to toggle from the web
 # UI (under "Features"). Default is everything on except the display.
 
+# Audio HAT device-tree overlay. "none" is right for USB DACs, HDMI-only,
+# or if you have no HAT. Independent of the display choice — you can
+# have a DAC with no screen (behind-dash install) or a screen with no
+# HAT DAC (feeding an external amp over HDMI/3.5mm). The web UI Features
+# panel exposes the same list.
+#   none                         USB DAC / HDMI / no DAC
+#   hifiberry-dac                HiFiBerry DAC, Pirate Audio (all variants), IQaudIO Pi-DAC, JustBoom
+#   hifiberry-dacplus            HiFiBerry DAC+ family, MiniAmp, Beocreate
+#   hifiberry-dacplushd          HiFiBerry DAC2 HD
+#   hifiberry-digi               HiFiBerry Digi+ (S/PDIF)
+#   hifiberry-amp                HiFiBerry Amp+ / Amp2 (drives speakers directly — no car radio needed)
+#   iqaudio-dacplus              IQaudIO DAC+ family
+#   iqaudio-digi-wm8804-audio    IQaudIO Digi
+#   allo-boss-dac-pcm512x-audio  Allo Boss DAC
+#   audioinjector-wm8731-audio   Audio Injector Stereo
+#   googlevoicehat-soundcard     Google AIY Voice HAT
+ALPHASOUND_DAC=none
+
 # Bluetooth A2DP receiver for non-Apple devices (yes/no)
 ALPHASOUND_BLUETOOTH=yes
 

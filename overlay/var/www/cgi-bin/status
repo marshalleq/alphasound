@@ -23,12 +23,14 @@ DEV_SSID=$(config_get ALPHASOUND_DEV_WIFI_SSID)
 FEAT_BT=$(config_get ALPHASOUND_BLUETOOTH)
 FEAT_SSH=$(config_get ALPHASOUND_SSHD)
 FEAT_DISPLAY=$(config_get ALPHASOUND_DISPLAY)
+FEAT_DAC=$(config_get ALPHASOUND_DAC)
 FEAT_OUTPUT=$(config_get ALPHASOUND_OUTPUT_DEVICE)
 FEAT_BRIGHT=$(config_get ALPHASOUND_DISPLAY_BRIGHTNESS)
 FEAT_ROON=$(config_get ALPHASOUND_ROON)
 [ -z "$FEAT_BT" ] && FEAT_BT=yes
 [ -z "$FEAT_SSH" ] && FEAT_SSH=yes
 [ -z "$FEAT_DISPLAY" ] && FEAT_DISPLAY=none
+[ -z "$FEAT_DAC" ] && FEAT_DAC=none
 [ -z "$FEAT_OUTPUT" ] && FEAT_OUTPUT=auto
 [ -z "$FEAT_ROON" ] && FEAT_ROON=no
 case "$FEAT_BRIGHT" in ""|*[!0-9]*) FEAT_BRIGHT=50 ;; esac
@@ -66,6 +68,7 @@ Cache-Control: no-store
     "bluetooth":  "$FEAT_BT",
     "sshd":       "$FEAT_SSH",
     "display":    "$FEAT_DISPLAY",
+    "dac":        "$FEAT_DAC",
     "output":     "$FEAT_OUTPUT",
     "brightness": $FEAT_BRIGHT,
     "roon":       "$FEAT_ROON"
