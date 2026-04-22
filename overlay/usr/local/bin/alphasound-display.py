@@ -19,9 +19,11 @@ import mmap
 import os
 import re
 import struct
+import subprocess
 import sys
 import threading
 import time
+import urllib.request
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
@@ -546,6 +548,120 @@ def load_fonts():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# HDMI-CEC remote control — only used when display=hdmi.
+# ---------------------------------------------------------------------------
+#
+# Flow: TV sends CEC USER_CONTROL_PRESSED over the HDMI cable → cec-ctl
+# decodes it → we translate the button to a DACP command → HTTP back to
+# the phone that's streaming (the `acre`/`daid` metadata items let us
+# do this without shairport-sync compile-time D-Bus support).
+#
+# DACP host:port is learned via mDNS (`_dacp._tcp` service named
+# `iTunes_Ctrl_<daid>`).
+
+CEC_TO_DACP = {
+    "Play":          "play",
+    "Pause":         "pause",
+    "Stop":          "stop",
+    "Play/Pause":    "playpause",
+    "Fast forward":  "beginff",
+    "Rewind":        "beginrew",
+    "Skip forward":  "nextitem",
+    "Skip backward": "previtem",
+    "Next":          "nextitem",
+    "Previous":      "previtem",
+    "Volume up":     "volumeup",
+    "Volume down":   "volumedown",
+    "Mute":          "mutetoggle",
+}
+
+_UI_COMMAND_RE = re.compile(r"ui-command:\s*([^(]+?)\s*\(")
+
+
+class CECListener:
+    def __init__(self, state):
+        self.state = state
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        # Claim a logical address so the TV sees us as a playback device.
+        try:
+            subprocess.run(["cec-ctl", "--playback"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=5)
+        except FileNotFoundError:
+            print("CEC: cec-ctl not installed, disabling", file=sys.stderr)
+            return
+        except Exception as e:
+            print(f"CEC: cec-ctl --playback failed: {e}", file=sys.stderr)
+
+        try:
+            proc = subprocess.Popen(
+                ["cec-ctl", "--monitor-all"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, bufsize=1,
+            )
+        except Exception as e:
+            print(f"CEC: monitor failed to start: {e}", file=sys.stderr)
+            return
+
+        print("CEC: listening for remote buttons", file=sys.stderr)
+        for line in proc.stdout:
+            m = _UI_COMMAND_RE.search(line)
+            if not m:
+                continue
+            button = m.group(1).strip()
+            dacp_cmd = CEC_TO_DACP.get(button)
+            if not dacp_cmd:
+                continue
+            self._send_dacp(button, dacp_cmd)
+
+    def _send_dacp(self, button, command):
+        acre = self.state.get("acre")
+        daid = self.state.get("daid")
+        if not acre or not daid:
+            print(f"CEC: {button} ignored — no active AirPlay session",
+                  file=sys.stderr)
+            return
+
+        addr, port = self._resolve_dacp(daid)
+        if not addr:
+            print(f"CEC: {button} — couldn't resolve iTunes_Ctrl_{daid}",
+                  file=sys.stderr)
+            return
+
+        url = f"http://{addr}:{port}/ctrl-int/1/{command}"
+        req = urllib.request.Request(url, headers={"Active-Remote": acre})
+        try:
+            urllib.request.urlopen(req, timeout=3).close()
+            print(f"CEC: {button} -> {command}", file=sys.stderr)
+        except Exception as e:
+            print(f"CEC: {command} failed: {e}", file=sys.stderr)
+
+    @staticmethod
+    def _resolve_dacp(daid):
+        try:
+            result = subprocess.run(
+                ["avahi-browse", "-rpt", "_dacp._tcp"],
+                capture_output=True, text=True, timeout=3,
+            )
+        except Exception:
+            return None, None
+        target = f"iTunes_Ctrl_{daid}"
+        for row in result.stdout.splitlines():
+            # Resolved rows start with '=' and are semicolon-separated:
+            # =;iface;proto;name;type;domain;host;addr;port;txt
+            if not row.startswith("="):
+                continue
+            parts = row.split(";")
+            if len(parts) >= 9 and parts[3] == target:
+                return parts[7], parts[8]
+        return None, None
+
+
 class BlankController:
     """Blanks the display after N seconds of no metadata activity,
     unblanks on the first new event. Watchdog runs in a daemon thread
@@ -616,6 +732,9 @@ def main():
     blanker.start_watchdog()
 
     state = {}
+    if device_name == "hdmi":
+        CECListener(state).start()
+
     render(disp, state, fonts)
 
     for _ in range(60):
@@ -652,6 +771,12 @@ def main():
                 state["duration"] = (rtp_end - rtp_start) / 44100
             except Exception:
                 pass
+        elif code == "acre":
+            # Active-Remote auth token for DACP calls (HDMI-CEC remote).
+            state["acre"] = payload.decode("ascii", errors="replace")
+        elif code == "daid":
+            # DACP ID — part of the mDNS service name we look up.
+            state["daid"] = payload.decode("ascii", errors="replace")
         elif code == "pend":
             state = {}; rtp_start = rtp_end = None; changed = True
 
