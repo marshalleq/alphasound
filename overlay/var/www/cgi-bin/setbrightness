@@ -1,0 +1,54 @@
+#!/bin/sh
+# Update display backlight brightness. Applied live via sysfs PWM and
+# also persisted to alphasound.txt so it survives reboot.
+#
+# Form field (POST, application/x-www-form-urlencoded):
+#   brightness = 0..100  (percent of full backlight)
+#
+# Live update is best-effort — if PWM sysfs isn't there (display != pirate-
+# audio, or dtoverlay didn't bind) we still persist the value, so next
+# reboot into pirate-audio will pick it up.
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+PWM_DUTY=/sys/class/pwm/pwmchip0/pwm1/duty_cycle
+PWM_PERIOD=/sys/class/pwm/pwmchip0/pwm1/period
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+DATA=$(head -c "${CONTENT_LENGTH:-0}")
+VALUE=$(printf '%s' "$DATA" | tr '&' '\n' | grep '^brightness=' | head -1 | cut -d= -f2-)
+
+case "$VALUE" in
+    ""|*[!0-9]*) reply "400 Bad Request" "brightness must be an integer 0-100" ;;
+esac
+[ "$VALUE" -gt 100 ] && reply "400 Bad Request" "brightness must be 0-100"
+
+if [ -e "$PWM_DUTY" ] && [ -e "$PWM_PERIOD" ]; then
+    PERIOD=$(cat "$PWM_PERIOD")
+    DUTY=$(( PERIOD * VALUE / 100 ))
+    echo "$DUTY" > "$PWM_DUTY" 2>/dev/null || true
+fi
+
+mount -o remount,rw /media/mmcblk0p1
+if grep -q '^ALPHASOUND_DISPLAY_BRIGHTNESS=' "$CONFIG"; then
+    sed -i "s|^ALPHASOUND_DISPLAY_BRIGHTNESS=.*|ALPHASOUND_DISPLAY_BRIGHTNESS=${VALUE}|" "$CONFIG"
+else
+    printf 'ALPHASOUND_DISPLAY_BRIGHTNESS=%s\n' "$VALUE" >> "$CONFIG"
+fi
+sync
+mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+
+reply "200 OK" "brightness ${VALUE}%"

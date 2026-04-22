@@ -24,12 +24,15 @@ FEAT_BT=$(config_get ALPHASOUND_BLUETOOTH)
 FEAT_SSH=$(config_get ALPHASOUND_SSHD)
 FEAT_DISPLAY=$(config_get ALPHASOUND_DISPLAY)
 FEAT_OUTPUT=$(config_get ALPHASOUND_OUTPUT_DEVICE)
+FEAT_BRIGHT=$(config_get ALPHASOUND_DISPLAY_BRIGHTNESS)
 FEAT_ROON=$(config_get ALPHASOUND_ROON)
 [ -z "$FEAT_BT" ] && FEAT_BT=yes
 [ -z "$FEAT_SSH" ] && FEAT_SSH=yes
 [ -z "$FEAT_DISPLAY" ] && FEAT_DISPLAY=none
 [ -z "$FEAT_OUTPUT" ] && FEAT_OUTPUT=auto
 [ -z "$FEAT_ROON" ] && FEAT_ROON=no
+case "$FEAT_BRIGHT" in ""|*[!0-9]*) FEAT_BRIGHT=50 ;; esac
+[ "$FEAT_BRIGHT" -gt 100 ] && FEAT_BRIGHT=100
 # The UI dropdown only knows auto and hdmi. If the user has hand-set a
 # raw hw:... value, report it as 'auto' so their edit isn't clobbered
 # the next time they hit Apply without touching the dropdown.
@@ -60,11 +63,12 @@ Cache-Control: no-store
   "mode": "$(json_esc "$MODE")",
   "dev_ssid": "$(json_esc "$DEV_SSID")",
   "features": {
-    "bluetooth": "$FEAT_BT",
-    "sshd":      "$FEAT_SSH",
-    "display":   "$FEAT_DISPLAY",
-    "output":    "$FEAT_OUTPUT",
-    "roon":      "$FEAT_ROON"
+    "bluetooth":  "$FEAT_BT",
+    "sshd":       "$FEAT_SSH",
+    "display":    "$FEAT_DISPLAY",
+    "output":     "$FEAT_OUTPUT",
+    "brightness": $FEAT_BRIGHT,
+    "roon":       "$FEAT_ROON"
   },
   "roon_installed": $ROON_INSTALLED,
   "boot_seconds": $BOOT_READY,

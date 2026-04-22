@@ -75,6 +75,13 @@ input[type=file] { width: 100%; padding: 0.4rem; }
     </label>
     <span class="muted">Pirate Audio implicitly enables its HAT DAC.</span>
   </p>
+  <p>
+    <label>Display brightness
+      <input type="range" id="feat_brightness" min="0" max="100" step="5" value="50" style="vertical-align: middle; width: 60%;">
+      <span id="brightness_val" class="muted">50%</span>
+    </label>
+    <span class="muted">Applies live (Pirate Audio only).</span>
+  </p>
   <button id="apply-features" type="button">Apply &amp; reboot</button>
 </form>
 </section>
@@ -230,6 +237,9 @@ async function refreshStatus() {
         $('feat_ssh').checked = (s.features.sshd === 'yes');
         $('feat_display').value = s.features.display || 'none';
         $('feat_output').value = s.features.output === 'hdmi' ? 'hdmi' : 'auto';
+        const bright = (s.features.brightness ?? 50);
+        $('feat_brightness').value = bright;
+        $('brightness_val').textContent = bright + '%';
         $('feat_roon').checked = (s.features.roon === 'yes');
         // Only allow enabling Roon if the binary is installed
         $('feat_roon').disabled = !s.roon_installed;
@@ -251,6 +261,22 @@ document.querySelectorAll('input[name=mode]').forEach(r => {
   r.addEventListener('change', e => {
     $('client-fields').style.display = (e.target.value === 'DEV') ? '' : 'none';
   });
+});
+
+// Brightness: live label update while dragging, send to backend on release.
+$('feat_brightness').addEventListener('input', e => {
+  $('brightness_val').textContent = e.target.value + '%';
+});
+$('feat_brightness').addEventListener('change', async e => {
+  const body = new URLSearchParams({ brightness: e.target.value }).toString();
+  try {
+    const r = await fetch('/cgi-bin/setbrightness', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (!r.ok) log('brightness: ' + (await r.text()).trim());
+  } catch (err) { log('brightness update failed: ' + err.message); }
 });
 
 $('apply-mode').onclick = async () => {
