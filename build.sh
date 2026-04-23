@@ -24,7 +24,7 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${
 
 PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils \
-          wpa_supplicant jq busybox-extras \
+          wpa_supplicant jq \
           lighttpd \
           python3 py3-pillow py3-numpy py3-libgpiod font-noto \
           v4l-utils \
@@ -154,7 +154,7 @@ REPOS
         chmod +x /chroot/etc/local.d/*.start
         chmod +x /chroot/etc/init.d/alphasound-*
 
-        # Web UI scripts must be executable for httpd to invoke them
+        # Web UI scripts must be executable for lighttpd's mod_cgi to run them
         chmod +x /chroot/var/www/cgi-bin/*
 
         # Ensure everything under /usr/local/bin/ is runnable (shipped
@@ -203,23 +203,6 @@ metadata =
     pipe_timeout = 5000;
 };
 SHAIRPORT_EOF
-
-        # busybox-extras puts its binary at /bin/busybox-extras and creates
-        # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
-        # ship /bin in the apkovl (clobbers modloop), so move the binary
-        # to /usr/bin and repoint every applet symlink.
-        if [ -f /chroot/bin/busybox-extras ]; then
-            echo 'relocating busybox-extras /bin -> /usr/bin'
-            mv /chroot/bin/busybox-extras /chroot/usr/bin/busybox-extras
-            find /chroot/usr -type l | while read -r f; do
-                if [ \"\$(readlink \"\$f\")\" = '/bin/busybox-extras' ]; then
-                    ln -sf /usr/bin/busybox-extras \"\$f\"
-                    echo \"  repointed \$f\"
-                fi
-            done
-        else
-            echo 'no /chroot/bin/busybox-extras found, skipping relocation'
-        fi
 
         # Version stamps. alphasound-version is for display in the web UI.
         # alphasound-alpine-version is checked at update time to refuse
