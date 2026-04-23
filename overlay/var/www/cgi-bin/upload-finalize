@@ -1,0 +1,62 @@
+#!/bin/sh
+# Validate the chunk-accumulated apkovl state file, swap it into place,
+# arm the rollback flag, and reboot. Companion to `upload-chunk`.
+#
+# This CGI is short (no multi-MB upload to drain) so it responds
+# quickly; the slow SD copy + sync + reboot run in a backgrounded
+# subshell detached from httpd's stdio, matching the pattern in the
+# original upload CGI.
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+BOOT=/media/mmcblk0p1
+APKOVL=$BOOT/alphasound.apkovl.tar.gz
+BAK=$BOOT/alphasound.apkovl.tar.gz.bak
+STATE=/tmp/alphasound.upload.state
+
+reply() {
+    printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+[ -s "$STATE" ] || reply "409 Conflict" "no uploaded state — send chunks first"
+
+# Normalise to gzipped tar: bare .tar uploads get re-gzipped in place
+# (some client OSes auto-extract the gzip wrapper on download).
+if tar -tzf "$STATE" >/dev/null 2>&1; then
+    :
+elif tar -tf "$STATE" >/dev/null 2>&1; then
+    gzip -c "$STATE" > "$STATE.gz" 2>/dev/null \
+        || reply "500 Internal Server Error" "re-gzip failed"
+    mv "$STATE.gz" "$STATE"
+else
+    rm -f "$STATE"
+    reply "400 Bad Request" "uploaded state is not a valid tar or tar.gz"
+fi
+
+. /etc/alphasound/apkovl-check.sh
+check_apkovl_compat "$STATE"
+
+printf 'Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n'
+printf 'swapping apkovl and rebooting. reconnect to the AP in ~30s.\n'
+
+# Backgrounded subshell owns the SD swap + reboot. Detaches from
+# httpd's stdio so the parent can exit and httpd flushes the response
+# before the slow sync and reboot actually fire.
+(
+    exec >/dev/null 2>&1 </dev/null
+    mount -o remount,rw "$BOOT"
+    mv "$APKOVL" "$BAK" 2>/dev/null || true
+    mv "$STATE" "$APKOVL"
+    touch "$BOOT/.boot_pending"
+    rm -f "$BOOT/.boot_count"
+    sync
+    mount -o remount,ro "$BOOT" 2>/dev/null || true
+    reboot
+) &
+
+exit 0

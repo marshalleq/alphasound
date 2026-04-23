@@ -5,6 +5,12 @@ channel=%%CHANNEL%%
 ieee80211d=1
 country_code=%%COUNTRY%%
 ieee80211n=1
+# HT capabilities must be declared explicitly or 11n silently falls back
+# to bare 11g speeds. SHORT-GI-20 shaves the guard interval on 20 MHz
+# channels (safe, universal). Pi Zero 2 W's radio is 2.4 GHz 1x1, so
+# we can't unlock much beyond this without channel bonding — which is
+# channel-dependent and risky to hardcode for a channel users edit.
+ht_capab=[SHORT-GI-20]
 wmm_enabled=1
 
 # WPA2-PSK

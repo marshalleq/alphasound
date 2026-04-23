@@ -1,0 +1,53 @@
+#!/bin/sh
+# Receive one chunk of an apkovl upload. State accumulates in
+# /tmp/alphasound.upload.state; the companion CGI `upload-finalize`
+# validates and swaps once the last chunk lands.
+#
+# Request:
+#   POST /cgi-bin/upload-chunk?offset=<bytes>&total=<bytes>
+#   body = chunk data
+#
+# Rationale: Safari (and some other browsers) abort long single POSTs
+# regardless of how responsive the server is. By splitting a 60+ MB
+# apkovl into many 4 MB pieces, each individual request completes in
+# a few seconds and never trips a browser-side timeout, even over the
+# slow AP-mode WiFi of a Pi Zero 2 W.
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+STATE=/tmp/alphasound.upload.state
+
+reply() {
+    printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+[ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || reply "411 Length Required" "missing or empty body"
+
+OFFSET=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | head -1 | cut -d= -f2-)
+TOTAL=$(printf '%s'  "${QUERY_STRING:-}" | tr '&' '\n' | grep '^total='  | head -1 | cut -d= -f2-)
+
+case "$OFFSET" in ""|*[!0-9]*) reply "400 Bad Request" "missing or non-numeric offset" ;; esac
+case "$TOTAL"  in ""|*[!0-9]*) reply "400 Bad Request" "missing or non-numeric total"  ;; esac
+
+# First chunk resets the state file; subsequent chunks append. The
+# client is responsible for sending chunks in offset order.
+if [ "$OFFSET" -eq 0 ]; then
+    : > "$STATE"
+else
+    # Refuse chunks whose offset doesn't match what we've already got —
+    # catches out-of-order sends, lost chunks, or a stale state file.
+    current=$(stat -c %s "$STATE" 2>/dev/null || echo 0)
+    if [ "$current" != "$OFFSET" ]; then
+        reply "409 Conflict" "offset mismatch: server has $current bytes, chunk starts at $OFFSET"
+    fi
+fi
+
+head -c "$CONTENT_LENGTH" >> "$STATE"
+
+new_size=$(stat -c %s "$STATE" 2>/dev/null || echo 0)
+reply "200 OK" "chunk ok; state size $new_size / $TOTAL"
