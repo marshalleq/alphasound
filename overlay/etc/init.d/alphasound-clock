@@ -33,5 +33,7 @@ start() {
     ebegin "seeding clock from build time ($fmt)"
     /usr/local/bin/alphasound-checkpoint clock-set
     date -s "$fmt" >/dev/null 2>&1
-    eend $?
+    rc=$?
+    /usr/local/bin/alphasound-checkpoint clock-done
+    eend $rc
 }

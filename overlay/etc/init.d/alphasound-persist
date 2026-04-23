@@ -18,6 +18,7 @@ depend() {
 }
 
 start() {
+    /usr/local/bin/alphasound-checkpoint persist-start
     ebegin "Restoring persistent state"
 
     if [ -d "$PERSIST/ssh_host_keys" ]; then
@@ -31,5 +32,6 @@ start() {
         cp -a "$PERSIST/bluetooth/." /var/lib/bluetooth/ 2>/dev/null
     fi
 
+    /usr/local/bin/alphasound-checkpoint persist-done
     eend 0
 }
