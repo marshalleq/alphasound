@@ -3,6 +3,7 @@
 # the user knows an update is bad before the auto-rollback threshold hits.
 
 . /etc/alphasound/session.sh
+. /etc/alphasound/reply.sh
 require_session
 
 set -e
@@ -10,14 +11,6 @@ set -e
 BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
-
-reply() {
-    code=$1; body=$2
-    printf 'Status: %s\r\n' "$code"
-    printf 'Content-Type: text/plain\r\n\r\n'
-    printf '%s\n' "$body"
-    exit
-}
 
 [ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
 [ -f "$BAK" ] || reply "404 Not Found" "no .bak to roll back to"
@@ -29,5 +22,4 @@ rm -f "$BOOT/.boot_pending" "$BOOT/.boot_count"
 sync
 mount -o remount,ro "$BOOT" 2>/dev/null || true
 
-( sleep 1; reboot ) &
-reply "200 OK" "rolled back — rebooting now"
+reply_and_reboot "rolled back — rebooting now"

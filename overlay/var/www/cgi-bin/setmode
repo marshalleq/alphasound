@@ -11,19 +11,12 @@
 # the web UI reachable so the user can retry.
 
 . /etc/alphasound/session.sh
+. /etc/alphasound/reply.sh
 require_session
 
 set -e
 
 CONFIG=/media/mmcblk0p1/alphasound.txt
-
-reply() {
-    code=$1; body=$2
-    printf 'Status: %s\r\n' "$code"
-    printf 'Content-Type: text/plain\r\n\r\n'
-    printf '%s\n' "$body"
-    exit
-}
 
 [ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
 
@@ -76,9 +69,8 @@ fi
 sync
 mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
 
-( sleep 1; reboot ) &
 if [ "$MODE" = "RUN" ]; then
-    reply "200 OK" "switched to AP mode — rebooting now"
+    reply_and_reboot "switched to AP mode — rebooting now"
 else
-    reply "200 OK" "switched to client mode (joining $SSID) — rebooting now. If credentials are wrong, the device falls back to AP mode automatically."
+    reply_and_reboot "switched to client mode (joining $SSID) — rebooting now. If credentials are wrong, the device falls back to AP mode automatically."
 fi
