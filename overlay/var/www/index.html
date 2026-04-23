@@ -470,7 +470,7 @@ $('upload').onclick = async () => {
   // momentary WiFi blip doesn't fail the whole upload. Server-side
   // state accumulates in /tmp/alphasound.upload.state and
   // /cgi-bin/upload-finalize swaps + reboots once everything's in.
-  const CHUNK = 4 * 1024 * 1024;
+  const CHUNK = 1 * 1024 * 1024;
   const MAX_ATTEMPTS = 4;
   const total = f.size;
   const totalMB = (total / 1024 / 1024).toFixed(1);
