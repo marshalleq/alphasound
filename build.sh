@@ -320,6 +320,14 @@ $SUDO tar xzf "${WORK_DIR}/${ALPINE_TARBALL}" -C "${MOUNT_DIR}/"
 # that never gets a v6 address.
 $SUDO sed -i 's/$/ ipv6.disable=1/' "${MOUNT_DIR}/cmdline.txt"
 
+# Preload snd_bcm2835 in initramfs (append to the existing modules=).
+# The kernel audio driver takes 1-2s to initialise and register the
+# ALSA card; doing it in initramfs rather than waiting for OpenRC's
+# `modules` service in the boot runlevel removes that wait from the
+# critical path. Falls back cleanly on other Alpine kernels that
+# don't know the module.
+$SUDO sed -i 's/modules=\([^ ]*\)/modules=\1,snd_bcm2835/' "${MOUNT_DIR}/cmdline.txt"
+
 # Ship the pre-built apkovl. Alpine's diskless init extracts this to / on
 # every boot, giving us a fully-installed system without running apk.
 $SUDO cp "${APKOVL_FILE}" "${MOUNT_DIR}/alphasound.apkovl.tar.gz"
