@@ -1,0 +1,22 @@
+#!/bin/sh
+# Alphasound pre-OpenRC init wrapper.
+#
+# The Pi has no RTC, so the kernel boots with the system clock at epoch
+# 1970 + seconds-since-power-on. OpenRC's dependency-graph code checks
+# the mtime of every init script, conf.d entry and runlevel symlink
+# against the current clock — and on a fresh boot every single file on
+# the rootfs looks like it's "from the future". This fires 'clock skew
+# detected' warnings + rebuilds the deptree on every boot.
+#
+# We can't fix it from inside OpenRC (even sysinit services run AFTER
+# the deptree check), so we seed the clock here — before exec'ing the
+# real init — from the plain ISO timestamp written to
+# /etc/alphasound-build-time at apkovl build time. If anything goes
+# wrong with the date set, the exec at the bottom still runs, so the
+# worst case is "system boots with a 1970 clock like before".
+
+if [ -r /etc/alphasound-build-time ]; then
+    /bin/date -s "$(cat /etc/alphasound-build-time)" >/dev/null 2>&1
+fi
+
+exec /sbin/openrc-init "$@"

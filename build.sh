@@ -153,6 +153,10 @@ REPOS
         # local.d scripts and our init.d services must be executable
         chmod +x /chroot/etc/local.d/*.start
         chmod +x /chroot/etc/init.d/alphasound-*
+        # /sbin/init: our pre-OpenRC wrapper, shipped via the overlay,
+        # replaces Alpine's openrc-init symlink. Must be executable or
+        # the kernel can't run it as PID 1.
+        chmod +x /chroot/sbin/init
 
         # Web UI scripts must be executable for lighttpd's mod_cgi to run them
         chmod +x /chroot/var/www/cgi-bin/*
