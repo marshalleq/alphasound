@@ -1,0 +1,12 @@
+#!/bin/sh
+# Append a named timestamp line to /tmp/alphasound-boot-time.
+# Every service that wants to show up on the boot-timing banner (and
+# in the status CGI's breakdown) calls this once with its label:
+#
+#     alphasound-checkpoint features-done
+#
+# The format ("<name> <seconds-since-power-on>") is what boot_times()
+# in alphasound.start and status.cgi already parse.
+
+awk -v n="$1" '{ printf "%s %.2f\n", n, $1 }' /proc/uptime \
+    >> /tmp/alphasound-boot-time

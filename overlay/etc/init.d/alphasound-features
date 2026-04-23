@@ -19,7 +19,8 @@ depend() {
 }
 
 start() {
-    [ ! -f "$CONFIG" ] && return 0
+    /usr/local/bin/alphasound-checkpoint features-start
+    [ ! -f "$CONFIG" ] && { /usr/local/bin/alphasound-checkpoint features-done; return 0; }
 
     local ssh bt mode
     ssh=$(grep '^ALPHASOUND_SSHD=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
@@ -51,4 +52,6 @@ start() {
         rc-update del avahi-daemon default 2>/dev/null
         eend 0
     fi
+
+    /usr/local/bin/alphasound-checkpoint features-done
 }

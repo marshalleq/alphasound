@@ -24,6 +24,7 @@ start() {
     [ -n "$ts" ] && [ "$ts" -gt 0 ] || return 0
 
     ebegin "seeding clock from build time (unix: $ts)"
+    /usr/local/bin/alphasound-checkpoint clock-set
 
     # Cascade through formats busybox may or may not accept:
     #   1. `-s @unixtime`   GNU form, present in recent busybox

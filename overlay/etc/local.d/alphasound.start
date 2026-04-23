@@ -66,10 +66,11 @@ log() {
 # "<name> <seconds>". Banner + status CGI read this to show "ready in
 # X.Xs" so we can see what each change does to boot speed.
 checkpoint() {
-    awk -v n="$1" '{ printf "%s %.2f\n", n, $1 }' /proc/uptime \
-        >> /tmp/alphasound-boot-time
+    /usr/local/bin/alphasound-checkpoint "$1"
 }
-: > /tmp/alphasound-boot-time
+# No truncation here — earlier checkpoints from alphasound-clock /
+# alphasound-features / alphasound-splash already populate this file.
+# Relying on tmpfs to reset it across boots.
 checkpoint local-d-start
 
 # Persist SSH host keys + Bluetooth pairings to the SD card so they survive
@@ -366,6 +367,12 @@ boot_times() {
     awk '{ printf "%s%s", sep, $2; sep=" / " } END { print "" }' \
         /tmp/alphasound-boot-time 2>/dev/null
 }
+# Matching labels, in the same order — kept dynamic so adding a new
+# checkpoint anywhere doesn't require updating the banner text.
+boot_labels() {
+    awk '{ printf "%s%s", sep, $1; sep=" / " } END { print "" }' \
+        /tmp/alphasound-boot-time 2>/dev/null
+}
 
 WLAN_IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}')
 WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' || echo "no wlan0")
@@ -408,7 +415,7 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
     fi
     echo "  Web UI:     http://${WLAN_IP%/*}/"
     echo "  Boot time:  $(boot_times) seconds"
-    echo "              (local-d / network / audio / roon / ready)"
+    echo "              ($(boot_labels))"
     echo "================================================"
     echo
 } > /dev/console 2>&1
