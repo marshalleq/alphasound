@@ -170,6 +170,34 @@ REPOS
         grep -q '^rc_parallel=' /chroot/etc/rc.conf \
             || echo 'rc_parallel=\"YES\"' >> /chroot/etc/rc.conf
 
+        # Bake a shairport-sync.conf matching the defaults in the shipped
+        # alphasound.txt. At boot, alphasound.start generates the same
+        # file from config; if the user hasn't edited anything, the two
+        # match byte-for-byte and we skip the ~1s shairport-sync restart.
+        # Output device hw:0,1 is the bcm2835 HDMI sub-device, which is
+        # what auto-detection resolves to on a Pi Zero 2 W with no DAC.
+        cat > /chroot/etc/shairport-sync.conf << 'SHAIRPORT_EOF'
+general =
+{
+    name = \"Alphasound\";
+    ignore_volume_control = \"yes\";
+    volume_max_db = -3.00;
+};
+
+alsa =
+{
+    output_device = \"hw:0,1\";
+};
+
+metadata =
+{
+    enabled = \"yes\";
+    include_cover_art = \"yes\";
+    pipe_name = \"/tmp/shairport-sync-metadata\";
+    pipe_timeout = 5000;
+};
+SHAIRPORT_EOF
+
         # busybox-extras puts its binary at /bin/busybox-extras and creates
         # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
         # ship /bin in the apkovl (clobbers modloop), so move the binary
@@ -194,6 +222,16 @@ REPOS
         # kernel modules in an apkovl).
         echo '${VERSION}' > /chroot/etc/alphasound-version
         echo '${ALPINE_RELEASE}' > /chroot/etc/alphasound-alpine-version
+
+        # Back-date OpenRC's dependency-graph inputs so they look OLDER
+        # than the Pi's boot-time system clock (epoch 1970, no RTC).
+        # Without this, OpenRC on every boot sees every init-script as
+        # \"from the future\", logs 'clock skew detected', and rebuilds
+        # its deptree. We touch symlinks with -h so runlevels/ entries
+        # aren't silently dereferenced.
+        find /chroot/etc/init.d /chroot/etc/conf.d -exec touch -t 197001020000 {} + 2>/dev/null || true
+        find /chroot/etc/runlevels -exec touch -h -t 197001020000 {} + 2>/dev/null || true
+        touch -t 197001020000 /chroot/etc/rc.conf /chroot/etc/inittab 2>/dev/null || true
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true

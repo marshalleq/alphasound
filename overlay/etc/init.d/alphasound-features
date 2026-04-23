@@ -21,11 +21,13 @@ depend() {
 start() {
     [ ! -f "$CONFIG" ] && return 0
 
-    local ssh bt
+    local ssh bt mode
     ssh=$(grep '^ALPHASOUND_SSHD=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
     bt=$(grep '^ALPHASOUND_BLUETOOTH=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
+    mode=$(grep '^ALPHASOUND_MODE=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
     [ -z "$ssh" ] && ssh=yes
     [ -z "$bt" ] && bt=yes
+    [ -z "$mode" ] && mode=RUN
 
     if [ "$ssh" != "yes" ]; then
         ebegin "disabling sshd"
@@ -37,6 +39,16 @@ start() {
         ebegin "disabling Bluetooth"
         rc-update del bluetooth default 2>/dev/null
         rc-update del bluealsa default 2>/dev/null
+        eend 0
+    fi
+
+    # mDNS is only useful in client mode (so you can ssh alphasound.local
+    # or Roon can discover the device). When we're the AP in RUN mode
+    # nobody's advertising anything interesting; skip avahi-daemon to
+    # save ~1s of boot.
+    if [ "$mode" = "RUN" ]; then
+        ebegin "disabling avahi-daemon (AP mode)"
+        rc-update del avahi-daemon default 2>/dev/null
         eend 0
     fi
 }

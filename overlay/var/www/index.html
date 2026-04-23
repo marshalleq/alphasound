@@ -466,24 +466,44 @@ $('upload').onclick = async () => {
   if (!f) { log('pick a file first'); return; }
   // Chunked upload: each slice is a separate short-lived POST so
   // Safari's per-fetch timeout never trips on a slow AP WiFi link.
-  // Server-side state accumulates in /tmp/alphasound.upload.state and
+  // Each chunk retries up to 3× with exponential backoff so a
+  // momentary WiFi blip doesn't fail the whole upload. Server-side
+  // state accumulates in /tmp/alphasound.upload.state and
   // /cgi-bin/upload-finalize swaps + reboots once everything's in.
   const CHUNK = 4 * 1024 * 1024;
+  const MAX_ATTEMPTS = 4;
   const total = f.size;
   const totalMB = (total / 1024 / 1024).toFixed(1);
   log(`uploading ${totalMB} MB in ${Math.ceil(total / CHUNK)} chunks…`);
+  const started = Date.now();
   try {
     for (let off = 0; off < total; off += CHUNK) {
       const end = Math.min(off + CHUNK, total);
       const slice = f.slice(off, end);
-      const r = await fetch(
-        `/cgi-bin/upload-chunk?offset=${off}&total=${total}`,
-        { method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: slice },
-      );
-      if (!r.ok) throw new Error(`chunk at ${off}: ${r.status} ${(await r.text()).trim()}`);
-      log(`uploaded ${(end / 1024 / 1024).toFixed(1)} / ${totalMB} MB`);
+      let lastErr;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          const r = await fetch(
+            `/cgi-bin/upload-chunk?offset=${off}&total=${total}`,
+            { method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: slice },
+          );
+          if (!r.ok) throw new Error(`${r.status} ${(await r.text()).trim()}`);
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+          if (attempt === MAX_ATTEMPTS) break;
+          const delay = attempt * 1000;
+          log(`chunk at ${(off / 1024 / 1024).toFixed(1)} MB failed (${e.message}); retry ${attempt}/${MAX_ATTEMPTS - 1} in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+      if (lastErr) throw lastErr;
+      const elapsed = (Date.now() - started) / 1000;
+      const speed = (end / 1024 / 1024 / elapsed).toFixed(2);
+      log(`uploaded ${(end / 1024 / 1024).toFixed(1)} / ${totalMB} MB  (avg ${speed} MB/s)`);
     }
     const r = await fetch('/cgi-bin/upload-finalize', { method: 'POST' });
     log(await r.text());

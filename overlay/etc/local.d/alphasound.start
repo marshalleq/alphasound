@@ -137,13 +137,14 @@ case "$ALPHASOUND_OUTPUT_DEVICE" in
         ;;
 esac
 
+# Regenerate shairport-sync.conf if it's stale relative to the config.
+# Returns 0 when the file was actually changed (caller should restart);
+# returns 1 when the existing file matches what we'd write (skip the
+# restart, save ~1s). At build time we bake in a default-values version
+# of this file, so a vanilla alphasound.txt produces a no-op here.
 write_shairport_config() {
-    log "writing shairport-sync config"
-    # metadata block is always emitted; the alphasound-display service is
-    # what actually consumes the pipe (only started when DISPLAY != none).
-    # No real cost when nobody reads it — the pipe is non-blocking-ish
-    # thanks to pipe_timeout.
-    cat > /etc/shairport-sync.conf << EOF
+    local tmp=/tmp/shairport-sync.conf.new
+    cat > "$tmp" << EOF
 general =
 {
     name = "$ALPHASOUND_NAME";
@@ -164,6 +165,12 @@ metadata =
     pipe_timeout = 5000;
 };
 EOF
+    if cmp -s "$tmp" /etc/shairport-sync.conf 2>/dev/null; then
+        rm -f "$tmp"
+        return 1
+    fi
+    mv "$tmp" /etc/shairport-sync.conf
+    return 0
 }
 
 start_ap_mode() {
@@ -269,7 +276,6 @@ start_bluetooth_setup() {
 # fall back to RUN (AP) so the device stays reachable. We don't change
 # the saved config — just override for this boot.
 EFFECTIVE_MODE=$ALPHASOUND_MODE
-write_shairport_config
 
 if [ "$EFFECTIVE_MODE" = "DEV" ]; then
     if try_client_mode; then
@@ -285,9 +291,15 @@ if [ "$EFFECTIVE_MODE" = "RUN" ]; then
 fi
 checkpoint network-ready
 
-log "restarting shairport-sync with new config"
-timeout 10 rc-service shairport-sync restart \
-    || log "shairport-sync restart failed/timed out"
+if write_shairport_config; then
+    log "shairport-sync config changed — restarting"
+    timeout 10 rc-service shairport-sync restart \
+        || log "shairport-sync restart failed/timed out"
+else
+    log "shairport-sync config unchanged — skipping restart"
+    rc-service shairport-sync status >/dev/null 2>&1 \
+        || rc-service shairport-sync start
+fi
 checkpoint audio-ready
 
 start_bluetooth_setup
