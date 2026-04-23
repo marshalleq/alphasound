@@ -4,8 +4,28 @@
 . /etc/alphasound/session.sh
 require_session
 
-svc() { rc-service "$1" status >/dev/null 2>&1 && echo true || echo false; }
-proc() { pgrep -x "$1" >/dev/null 2>&1 && echo true || echo false; }
+# $1 = service / process name, $2 = feature flag (missing or "yes" = enabled).
+# Emits a JSON string literal: "ok", "fail", or "disabled". A service
+# reports "disabled" rather than "fail" when the user has toggled its
+# feature off so the web UI doesn't flag it as broken.
+svc() {
+    if [ -n "$2" ] && [ "$2" != "yes" ]; then
+        printf '"disabled"'
+    elif rc-service "$1" status >/dev/null 2>&1; then
+        printf '"ok"'
+    else
+        printf '"fail"'
+    fi
+}
+proc() {
+    if [ -n "$2" ] && [ "$2" != "yes" ]; then
+        printf '"disabled"'
+    elif pgrep -x "$1" >/dev/null 2>&1; then
+        printf '"ok"'
+    else
+        printf '"fail"'
+    fi
+}
 
 VERSION=$(cat /etc/alphasound-version 2>/dev/null || echo unknown)
 UPTIME=$(uptime 2>/dev/null | sed 's/^.*up *//; s/, *load.*$//; s/, *[0-9]* *user.*$//')
@@ -84,9 +104,9 @@ Cache-Control: no-store
     "hostapd":        $(proc hostapd),
     "dnsmasq":        $(svc dnsmasq),
     "shairport-sync": $(svc shairport-sync),
-    "bluetoothd":     $(svc bluetooth),
-    "bluealsad":      $(svc bluealsa),
-    "sshd":           $(svc sshd)
+    "bluetoothd":     $(svc bluetooth "$FEAT_BT"),
+    "bluealsad":      $(svc bluealsa "$FEAT_BT"),
+    "sshd":           $(svc sshd "$FEAT_SSH")
   }
 }
 EOF

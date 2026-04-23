@@ -175,7 +175,7 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 const $ = id => document.getElementById(id);
 const log = msg => { $('log').textContent = msg; };
 
-function row(name, ok, note) {
+function row(name, state, note) {
   const tr = document.createElement('tr');
   const td1 = document.createElement('td');
   td1.textContent = name;
@@ -184,8 +184,17 @@ function row(name, ok, note) {
     td2.textContent = note;
     td2.className = 'muted';
   } else {
-    td2.textContent = ok ? 'OK' : 'FAIL';
-    td2.className = ok ? 'ok' : 'fail';
+    // state is a string from the status JSON: "ok" | "fail" | "disabled".
+    // Keep boolean compat for any older payload still in flight.
+    const key = state === true ? 'ok' : state === false ? 'fail' : state;
+    const map = {
+      ok:       ['OK',       'ok'],
+      fail:     ['FAIL',     'fail'],
+      disabled: ['disabled', 'muted'],
+    };
+    const [label, cls] = map[key] || ['?', 'muted'];
+    td2.textContent = label;
+    td2.className = cls;
   }
   tr.appendChild(td1);
   tr.appendChild(td2);
