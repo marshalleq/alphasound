@@ -264,10 +264,25 @@ start_bluetooth_setup() {
     [ "$ALPHASOUND_BLUETOOTH" = "yes" ] || return 0
     log "starting bluetooth setup in background"
     (
-        timeout 5 bluetoothctl system-alias "$ALPHASOUND_NAME" 2>&1
-        timeout 5 bluetoothctl power on 2>&1
-        timeout 5 bluetoothctl discoverable on 2>&1
-        timeout 5 bluetoothctl pairable on 2>&1
+        # Wait briefly for bluetoothd to be accepting D-Bus calls.
+        # bluetoothctl show returns non-zero if there's no adapter yet.
+        i=0
+        while ! bluetoothctl show >/dev/null 2>&1 && [ "$i" -lt 5 ]; do
+            sleep 1
+            i=$((i + 1))
+        done
+        # Pipe all setup commands into a single bluetoothctl session.
+        # Separate invocations race against each other through D-Bus
+        # and bluez answers the second with org.bluez.Error.busy while
+        # it's still processing the first. One session = sequential.
+        timeout 10 bluetoothctl <<EOF 2>&1
+system-alias $ALPHASOUND_NAME
+power on
+discoverable on
+pairable on
+EOF
+        # Long-lived agent session for incoming pair requests. Kept
+        # open via tail so stdin never closes.
         (echo "agent NoInputNoOutput"; echo "default-agent"; tail -f /dev/null) | bluetoothctl &
         bluealsa-aplay --profile-a2dp --pcm="$ALPHASOUND_OUTPUT_DEVICE" &
     ) > /dev/console 2>&1 &
