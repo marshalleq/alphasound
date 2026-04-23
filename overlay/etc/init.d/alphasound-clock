@@ -22,7 +22,11 @@ start() {
     [ -f /etc/alphasound-version ] || return 0
     ts=$(stat -c %Y /etc/alphasound-version 2>/dev/null)
     [ -n "$ts" ] && [ "$ts" -gt 0 ] || return 0
-    ebegin "seeding clock from build time"
-    date -s "@$ts" >/dev/null 2>&1
+    # busybox date doesn't accept the GNU `-s @unixtime` form, so use
+    # awk's strftime to format into a shape busybox does parse.
+    fmt=$(awk -v t="$ts" 'BEGIN { print strftime("%Y-%m-%d %H:%M:%S", t) }')
+    [ -n "$fmt" ] || return 0
+    ebegin "seeding clock from build time ($fmt)"
+    date -s "$fmt" >/dev/null 2>&1
     eend $?
 }

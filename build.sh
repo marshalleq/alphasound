@@ -163,6 +163,13 @@ REPOS
         gcc -O2 -Wall -o /chroot/usr/local/bin/alphasound-splash /splash/alphasound-splash.c
         python3 /splash/gen-splash.py /chroot/usr/share/alphasound-splash/splash.raw
 
+        # Enable OpenRC parallel service startup so the default runlevel
+        # uses all four cores instead of one. Covers both the commented
+        # default and the no-match case (append if missing).
+        sed -i 's|^#*rc_parallel=.*|rc_parallel=\"YES\"|' /chroot/etc/rc.conf
+        grep -q '^rc_parallel=' /chroot/etc/rc.conf \
+            || echo 'rc_parallel=\"YES\"' >> /chroot/etc/rc.conf
+
         # busybox-extras puts its binary at /bin/busybox-extras and creates
         # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
         # ship /bin in the apkovl (clobbers modloop), so move the binary
