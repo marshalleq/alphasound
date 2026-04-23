@@ -2,12 +2,9 @@
 # Reboot the device.
 
 . /etc/alphasound/session.sh
+. /etc/alphasound/reply.sh
 require_session
 
-if [ "$REQUEST_METHOD" != "POST" ]; then
-    printf 'Status: 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nuse POST\n'
-    exit
-fi
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
 
-printf 'Content-Type: text/plain\r\n\r\nrebooting…\n'
-( sleep 1; reboot ) &
+reply_and_reboot "rebooting…"

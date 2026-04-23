@@ -1,11 +1,10 @@
 #!/bin/sh
 # Download an apkovl from a GitHub release URL, validate, swap, reboot.
-# Same response-first + heartbeat + background-reboot pattern as upload;
-# see that CGI's header comment for the rationale.
 #
 # Form field (POST, urlencoded): url=https://...alphasound.apkovl.tar.gz
 
 . /etc/alphasound/session.sh
+. /etc/alphasound/reply.sh
 require_session
 
 set -e
@@ -13,24 +12,11 @@ set -e
 BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
-NEW=$BOOT/alphasound.apkovl.tar.gz.new
+TMP=/tmp/alphasound.pull.$$
 
-REMOUNT_RW=0
-HEARTBEAT=""
-cleanup() {
-    [ -n "$HEARTBEAT" ] && kill "$HEARTBEAT" 2>/dev/null
-    rm -f "$NEW" 2>/dev/null
-    [ "$REMOUNT_RW" = 1 ] && mount -o remount,ro "$BOOT" 2>/dev/null
-    return 0
-}
-trap cleanup EXIT
+trap 'rm -f "$TMP"' EXIT
 
-early_reply() {
-    printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
-    exit
-}
-
-[ "$REQUEST_METHOD" = "POST" ] || early_reply "405 Method Not Allowed" "use POST"
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
 
 DATA=$(head -c "${CONTENT_LENGTH:-0}")
 URL=$(printf '%s' "$DATA" | tr '&' '\n' | grep '^url=' | head -1 | cut -d= -f2-)
@@ -41,59 +27,26 @@ URL=$(printf '%b' "$(printf '%s' "$URL" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x
 case "$URL" in
     https://github.com/*/releases/download/*) ;;
     https://objects.githubusercontent.com/*) ;;  # GitHub redirects assets here
-    *) early_reply "400 Bad Request" "URL must be a GitHub release asset" ;;
+    *) reply "400 Bad Request" "URL must be a GitHub release asset" ;;
 esac
 
-printf 'Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n'
-printf 'downloading '
+wget -q -T 120 -O "$TMP" "$URL" \
+    || reply "502 Bad Gateway" "download failed (no internet? URL wrong?)"
 
-(while sleep 4; do printf '.\n'; done) &
-HEARTBEAT=$!
+tar -tzf "$TMP" >/dev/null 2>&1 \
+    || reply "400 Bad Request" "downloaded file is not a valid tar.gz"
+
+. /etc/alphasound/apkovl-check.sh
+check_apkovl_compat "$TMP"
 
 mount -o remount,rw "$BOOT"
-REMOUNT_RW=1
-
-set +e
-wget -q -T 120 -O "$NEW" "$URL"
-rc=$?
-set -e
-if [ "$rc" -ne 0 ]; then
-    printf '\nERROR: download failed (no internet? URL wrong?)\n'
-    exit 1
-fi
-
-printf ' ok\n'
-
-if ! tar -tzf "$NEW" >/dev/null 2>&1; then
-    printf 'ERROR: downloaded file is not a valid tar.gz\n'
-    exit 1
-fi
-
-if ! ( . /etc/alphasound/apkovl-check.sh; check_apkovl_compat "$NEW" >/dev/null 2>&1 ); then
-    printf 'ERROR: apkovl Alpine major version mismatch\n'
-    logger -t alphasound-pull "apkovl compat check failed" 2>/dev/null || true
-    exit 1
-fi
-
 mv "$APKOVL" "$BAK" 2>/dev/null || true
-mv "$NEW" "$APKOVL"
+mv "$TMP" "$APKOVL"
 touch "$BOOT/.boot_pending"
 rm -f "$BOOT/.boot_count"
+sync
+mount -o remount,ro "$BOOT" 2>/dev/null || true
 
-kill "$HEARTBEAT" 2>/dev/null
-wait "$HEARTBEAT" 2>/dev/null
-HEARTBEAT=""
-
-printf 'installed — rebooting, reconnect in ~30s\n'
-
-REMOUNT_RW=0
 trap - EXIT
 
-(
-    exec >/dev/null 2>&1 </dev/null
-    sync
-    mount -o remount,ro "$BOOT" 2>/dev/null || true
-    reboot
-) &
-
-exit 0
+reply_and_reboot "downloaded and applied — rebooting. Reconnect in ~30s."

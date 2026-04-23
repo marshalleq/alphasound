@@ -8,6 +8,7 @@
 # busybox httpd's quirks, which we're no longer using).
 
 . /etc/alphasound/session.sh
+. /etc/alphasound/reply.sh
 require_session
 
 set -e
@@ -16,11 +17,6 @@ BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
 TMP=/tmp/alphasound.upload.$$
-
-reply() {
-    printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
-    exit
-}
 
 trap 'rm -f "$TMP"' EXIT
 
@@ -55,7 +51,4 @@ mount -o remount,ro "$BOOT" 2>/dev/null || true
 # TMP has been moved; disable the cleanup trap.
 trap - EXIT
 
-# Reboot in the background so the HTTP response flushes to the client
-# before the device goes offline.
-( sleep 1; reboot ) &
-reply "200 OK" "update applied — rebooting. Reconnect to the AP in ~30s."
+reply_and_reboot "update applied — rebooting. Reconnect to the AP in ~30s."
