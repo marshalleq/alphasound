@@ -20,7 +20,14 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl
 
-      - name: Build image
+      - name: Build home variant
+        env:
+          VARIANT: home
+        run: ./build.sh
+
+      - name: Build car variant
+        env:
+          VARIANT: car
         run: ./build.sh
 
       # `gh release create` ships pre-installed on GitHub runners, so we
@@ -29,10 +36,10 @@ jobs:
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
-          DATE: ${{ github.run_number }}
+          RUN_NUM: ${{ github.run_number }}
         run: |
           DATE_STR=$(date +'%Y%m%d')
-          TAG="build-${DATE_STR}-${DATE}"
+          TAG="build-${DATE_STR}-${RUN_NUM}"
           gh release create "$TAG" \
             --title "Alphasound ${DATE_STR}" \
             --notes "Automated build from \`main\` branch.
@@ -42,9 +49,15 @@ jobs:
           **Bluetooth A2DP**: auto-pairing for non-Apple devices
           **Filesystem**: Runs entirely from RAM — SD card is read-only by design
 
+          Two variants published:
+          - \`alphasound-home.img.xz\` — full feature set (display support, CEC, Roon, web UI brightness control). Use on a home/desk install.
+          - \`alphasound-car.img.xz\` — stripped for boot speed; no Python/display/CEC/Roon. Use for behind-dash or trunk-mount installs where cold-start latency matters.
+
           ## Quick start
-          1. Flash the \`.img.xz\` to an SD card (Raspberry Pi Imager can flash \`.xz\` directly)
+          1. Flash the appropriate \`.img.xz\` to an SD card (Raspberry Pi Imager can flash \`.xz\` directly)
           2. Edit \`alphasound.txt\` on the SD card to set your preferences
           3. Insert SD card, power on, connect to the WiFi network, AirPlay" \
-            deploy/alphasound.img.xz \
-            deploy/alphasound.apkovl.tar.gz
+            deploy/alphasound-home.img.xz \
+            deploy/alphasound-home.apkovl.tar.gz \
+            deploy/alphasound-car.img.xz \
+            deploy/alphasound-car.apkovl.tar.gz
