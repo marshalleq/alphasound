@@ -37,9 +37,11 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
 # won't be enabled.
 SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop alphasound-clock"
 # hwclock excluded: Pi has no battery-backed RTC, so the service just
-# logs errors trying to talk to /dev/rtc on every boot. We get our time
-# from NTP once we're online (client mode) or from file-touch mtimes.
-BOOT_SVCS="bootmisc hostname modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features alphasound-splash"
+# logs errors trying to talk to /dev/rtc on every boot.
+# syslog excluded: this appliance logs to /dev/console via alphasound.start
+# and to stderr via OpenRC; persistent syslog to /var/log/messages isn't
+# useful when the rootfs is tmpfs (wiped on every reboot) and saves ~1s.
+BOOT_SVCS="bootmisc hostname modules sysctl alphasound-rollback alphasound-persist alphasound-features alphasound-splash"
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd lighttpd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
