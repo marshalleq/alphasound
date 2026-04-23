@@ -268,12 +268,18 @@ echo "Calculating image size..."
 mkdir -p "${WORK_DIR}/alpine-extract"
 tar xzf "${WORK_DIR}/${ALPINE_TARBALL}" -C "${WORK_DIR}/alpine-extract"
 TARBALL_SIZE=$(du -sb "${WORK_DIR}/alpine-extract" | cut -f1)
-# Headroom sized to fit an in-flight apkovl update in the worst case:
-# the existing .tar.gz (~60 MB) + the previous .bak (~60 MB, kept for
-# auto-rollback) + an incoming .new (~60 MB gzipped or up to ~180 MB
-# if the user's OS auto-extracted the .gz wrapper before upload) +
-# ~30 MB of FAT32 overhead and breathing room. 384 MB covers it.
-IMG_SIZE_MB=$(( (TARBALL_SIZE + APKOVL_SIZE + 384*1024*1024) / 1024 / 1024 + 1 ))
+# Flat 2 GB FAT32 partition. Alphasound runs entirely from a tmpfs
+# extracted from the apkovl at boot, so nothing about runtime depends
+# on how much disk we allocate — SD space is only needed for updates
+# (in-flight .new file + preserved .bak), persistent state (SSH host
+# keys, Bluetooth pairings, optional RoonBridge tarball), and future
+# headroom. xz compresses the unused partition space to almost nothing,
+# so a bigger image on disk is "free" in terms of download size; only
+# flash time grows by a few seconds. Calculated size is still used as
+# a floor in case Alpine's tarball ever outgrows 2 GB.
+IMG_SIZE_MB=2048
+CALCULATED_IMG_SIZE_MB=$(( (TARBALL_SIZE + APKOVL_SIZE + 64*1024*1024) / 1024 / 1024 + 1 ))
+[ "$CALCULATED_IMG_SIZE_MB" -gt "$IMG_SIZE_MB" ] && IMG_SIZE_MB=$CALCULATED_IMG_SIZE_MB
 echo "Image size: ${IMG_SIZE_MB}MB"
 
 # --- Create blank image with FAT32 partition ---
