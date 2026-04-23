@@ -35,7 +35,10 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
 # replaces /etc/runlevels wholesale, so if we don't list these here, they
 # won't be enabled.
 SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
-BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features alphasound-splash"
+# hwclock excluded: Pi has no battery-backed RTC, so the service just
+# logs errors trying to talk to /dev/rtc on every boot. We get our time
+# from NTP once we're online (client mode) or from file-touch mtimes.
+BOOT_SVCS="bootmisc hostname modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features alphasound-splash"
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
