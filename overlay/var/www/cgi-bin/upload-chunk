@@ -21,7 +21,12 @@ set -e
 STATE=/tmp/alphasound.upload.state
 
 reply() {
-    printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
+    # Connection: close stops Safari from trying to keep-alive the
+    # socket between chunks. With keep-alive, the browser's per-host
+    # connection pool (6 on Safari) fills up and chunk 7 hangs
+    # forever waiting for a free slot. A fresh TCP connection per
+    # chunk avoids the issue entirely at ~0 extra cost over WiFi.
+    printf 'Status: %s\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s\n' "$1" "$2"
     exit
 }
 
