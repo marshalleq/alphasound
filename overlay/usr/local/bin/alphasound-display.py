@@ -30,6 +30,16 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 PWM_DUTY_PATH = "/sys/class/pwm/pwmchip0/pwm1/duty_cycle"
 
+# Presence of this file (content = short status text) makes the display
+# service paint an "updating" override until it goes away. Upload +
+# update-pull CGIs write to it through each stage; tmpfs wipes it on
+# reboot so the boot splash takes over for the post-swap boot.
+UPDATE_STATUS_PATH = "/tmp/alphasound-updating"
+
+# Main-thread render() calls and the background UpdateWatcher both paint
+# to the same disp — this lock serialises SPI writes between them.
+_display_lock = threading.Lock()
+
 SPI_IOC_WR_MODE = 0x40016B01
 SPI_IOC_WR_MAX_SPEED_HZ = 0x40046B04
 
@@ -430,6 +440,63 @@ def _bottom_gradient(width, height, color, peak_alpha=245):
     return Image.fromarray(arr, "RGBA")
 
 
+def render_simple_message(disp, fonts, title, subtitle,
+                          title_fill=(230, 230, 235),
+                          subtitle_fill=(150, 170, 220)):
+    """Centred two-line splash. Used for the boot 'Waiting for music…'
+    state and the UpdateWatcher's firmware-update status."""
+    w, h = disp.cfg["width"], disp.cfg["height"]
+    img = Image.new("RGB", (w, h), (12, 12, 16))
+    draw = ImageDraw.Draw(img)
+    bbox = draw.textbbox((0, 0), title, font=fonts["xl"])
+    draw.text(((w - bbox[2]) // 2, h // 2 - 40), title,
+              fill=title_fill, font=fonts["xl"])
+    bbox = draw.textbbox((0, 0), subtitle, font=fonts["body"])
+    draw.text(((w - bbox[2]) // 2, h // 2 + 10), subtitle,
+              fill=subtitle_fill, font=fonts["body"])
+    disp.display(img)
+
+
+class UpdateWatcher:
+    """Polls UPDATE_STATUS_PATH; when present, paints an override on the
+    display with the file's contents as the subtitle. The main render
+    loop and this watcher serialise through _display_lock so their SPI
+    traffic doesn't interleave.
+
+    The file is expected to disappear by virtue of the device rebooting
+    into a fresh tmpfs — we don't try to cleanly unwind the override."""
+    def __init__(self, disp, fonts, interval=0.5):
+        self.disp = disp
+        self.fonts = fonts
+        self.interval = interval
+        self._last = None
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        while True:
+            time.sleep(self.interval)
+            msg = self._read()
+            if msg != self._last:
+                if msg:
+                    try:
+                        with _display_lock:
+                            render_simple_message(self.disp, self.fonts,
+                                                  "Alphasound", msg)
+                    except Exception as e:
+                        print(f"update render failed: {e}", file=sys.stderr)
+                self._last = msg
+
+    @staticmethod
+    def _read():
+        try:
+            with open(UPDATE_STATUS_PATH) as f:
+                return f.read().strip() or None
+        except OSError:
+            return None
+
+
 def render(disp, state, fonts):
     w, h = disp.cfg["width"], disp.cfg["height"]
     img = Image.new("RGB", (w, h), (12, 12, 16))
@@ -442,13 +509,10 @@ def render(disp, state, fonts):
     pos, dur = state.get("position"), state.get("duration")
 
     if not title and not artist and not art:
-        msg1 = "Alphasound"
-        msg2 = "Waiting for music…"
-        bbox = draw.textbbox((0, 0), msg1, font=fonts["xl"])
-        draw.text(((w - bbox[2]) // 2, h // 2 - 40), msg1, fill=(220, 220, 220), font=fonts["xl"])
-        bbox = draw.textbbox((0, 0), msg2, font=fonts["body"])
-        draw.text(((w - bbox[2]) // 2, h // 2 + 10), msg2, fill=(140, 140, 140), font=fonts["body"])
-        disp.display(img); return
+        render_simple_message(disp, fonts, "Alphasound", "Waiting for music…",
+                              title_fill=(220, 220, 220),
+                              subtitle_fill=(140, 140, 140))
+        return
 
     # Layout strategy depends on aspect ratio.
     landscape = w >= h * 1.4   # HDMI 16:9, big TFTs
@@ -731,11 +795,14 @@ def main():
     blanker = BlankController(disp, os.environ.get("ALPHASOUND_DISPLAY_TIMEOUT", "0"))
     blanker.start_watchdog()
 
+    UpdateWatcher(disp, fonts).start()
+
     state = {}
     if device_name == "hdmi":
         CECListener(state).start()
 
-    render(disp, state, fonts)
+    with _display_lock:
+        render(disp, state, fonts)
 
     for _ in range(60):
         if os.path.exists(pipe_path):
@@ -789,14 +856,16 @@ def main():
         # tick the progress bar every second.
         if changed and now - last_render >= 0.4:
             try:
-                render(disp, state, fonts)
+                with _display_lock:
+                    render(disp, state, fonts)
                 last_render = now
                 last_progress_render = now
             except Exception as e:
                 print(f"render failed: {e}", file=sys.stderr)
         elif now - last_progress_render >= 1.0 and "duration" in state:
             try:
-                render(disp, state, fonts)
+                with _display_lock:
+                    render(disp, state, fonts)
                 last_progress_render = now
             except Exception as e:
                 print(f"render failed: {e}", file=sys.stderr)

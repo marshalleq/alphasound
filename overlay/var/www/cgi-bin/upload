@@ -42,16 +42,28 @@ if [ -n "$avail_kb" ] && [ "$avail_kb" -lt "$needed_kb" ]; then
     reply "507 Insufficient Storage" "not enough free space on SD: need ~${needed_kb}KB, have ${avail_kb}KB"
 fi
 
+# Drive the on-device "Updating..." overlay on the display service by
+# writing the current stage into /tmp/alphasound-updating. The display
+# service polls this file and paints whatever's in it. Tmpfs wipes the
+# file at reboot so the handoff to the boot splash is automatic.
+STATUS=/tmp/alphasound-updating
+status() { echo "$1" > "$STATUS" 2>/dev/null; }
+
+status "Receiving update…"
+
 mount -o remount,rw "$BOOT"
 REMOUNT_RW=1
 
 head -c "$CONTENT_LENGTH" > "$NEW"
+
+status "Validating…"
 
 # Accept either a gzipped tar or a bare tar; re-gzip the bare case so
 # the boot-time apkovl reader (which only knows .tar.gz) is happy.
 if tar -tzf "$NEW" >/dev/null 2>&1; then
     :
 elif tar -tf "$NEW" >/dev/null 2>&1; then
+    status "Recompressing…"
     gzip -c "$NEW" > "$NEW.gz" 2>/dev/null \
         || reply "500 Internal Server Error" "re-gzip failed"
     mv "$NEW.gz" "$NEW"
@@ -62,12 +74,16 @@ fi
 . /etc/alphasound/apkovl-check.sh
 check_apkovl_compat "$NEW"
 
+status "Applying update…"
+
 mv "$APKOVL" "$BAK" 2>/dev/null || true
 mv "$NEW" "$APKOVL"
 touch "$BOOT/.boot_pending"
 rm -f "$BOOT/.boot_count"
 sync
 mount -o remount,ro "$BOOT" 2>/dev/null || true
+
+status "Rebooting…"
 
 # Swap + remount done; cleanup trap is no longer needed.
 REMOUNT_RW=0
