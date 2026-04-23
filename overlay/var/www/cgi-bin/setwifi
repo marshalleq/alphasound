@@ -1,0 +1,91 @@
+#!/bin/sh
+# Update AP-mode WiFi settings (SSID, passphrase, channel, country) in
+# alphasound.txt and reboot. These are the network your phone connects
+# to in RUN mode — getting them wrong locks you out until you edit
+# alphasound.txt on the SD card directly, so validate hard up front.
+#
+# Form fields (POST, application/x-www-form-urlencoded):
+#   ssid       = 1-32 char network name
+#   passphrase = 8-63 char WPA2 passphrase
+#   channel    = 1-13 (2.4 GHz channel)
+#   country    = 2-letter ISO country code
+
+. /etc/alphasound/session.sh
+require_session
+
+set -e
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+
+reply() {
+    code=$1; body=$2
+    printf 'Status: %s\r\n' "$code"
+    printf 'Content-Type: text/plain\r\n\r\n'
+    printf '%s\n' "$body"
+    exit
+}
+
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
+
+DATA=$(head -c "${CONTENT_LENGTH:-0}")
+
+urldecode() {
+    s=$(printf '%s' "$1" | sed 's/+/ /g')
+    printf '%b' "$(printf '%s' "$s" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x\1/g')"
+}
+field() {
+    raw=$(printf '%s' "$DATA" | tr '&' '\n' | grep "^$1=" | head -1 | cut -d= -f2-)
+    urldecode "$raw"
+}
+
+SSID=$(field ssid)
+PASS=$(field passphrase)
+CHANNEL=$(field channel)
+COUNTRY=$(field country)
+
+# SSID: 1-32 chars, no control characters
+[ -n "$SSID" ] || reply "400 Bad Request" "ssid is required"
+ssid_len=${#SSID}
+[ "$ssid_len" -ge 1 ] && [ "$ssid_len" -le 32 ] \
+    || reply "400 Bad Request" "ssid must be 1-32 characters"
+
+# Passphrase: 8-63 chars (WPA2 PSK). Blank = "keep current" so the user
+# can edit the channel or SSID without having to re-enter the passphrase
+# every time (the UI never receives the current passphrase back).
+if [ -n "$PASS" ]; then
+    pass_len=${#PASS}
+    [ "$pass_len" -ge 8 ] && [ "$pass_len" -le 63 ] \
+        || reply "400 Bad Request" "passphrase must be 8-63 characters"
+fi
+
+# Channel: 1-13
+case "$CHANNEL" in ""|*[!0-9]*) reply "400 Bad Request" "channel must be 1-13" ;; esac
+[ "$CHANNEL" -ge 1 ] && [ "$CHANNEL" -le 13 ] \
+    || reply "400 Bad Request" "channel must be 1-13"
+
+# Country: exactly two uppercase letters
+case "$COUNTRY" in
+    [A-Z][A-Z]) ;;
+    *) reply "400 Bad Request" "country must be a 2-letter ISO code (e.g. NZ, US, GB)" ;;
+esac
+
+update_config() {
+    key=$1
+    value=$(printf '%s' "$2" | sed 's/[\\|]/\\&/g')
+    if grep -q "^${key}=" "$CONFIG"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$CONFIG"
+    else
+        printf '%s=%s\n' "$key" "$2" >> "$CONFIG"
+    fi
+}
+
+mount -o remount,rw /media/mmcblk0p1
+update_config ALPHASOUND_SSID    "$SSID"
+update_config ALPHASOUND_CHANNEL "$CHANNEL"
+update_config ALPHASOUND_COUNTRY "$COUNTRY"
+[ -n "$PASS" ] && update_config ALPHASOUND_PASSPHRASE "$PASS"
+sync
+mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
+
+( sleep 1; reboot ) &
+reply "200 OK" "WiFi updated — rebooting. Reconnect to '${SSID}' with the new passphrase."

@@ -40,6 +40,13 @@ config_get() {
 }
 MODE=$(config_get ALPHASOUND_MODE)
 DEV_SSID=$(config_get ALPHASOUND_DEV_WIFI_SSID)
+WIFI_SSID=$(config_get ALPHASOUND_SSID)
+WIFI_CHANNEL=$(config_get ALPHASOUND_CHANNEL)
+WIFI_COUNTRY=$(config_get ALPHASOUND_COUNTRY)
+[ -z "$WIFI_SSID" ] && WIFI_SSID=Alphasound
+[ -z "$WIFI_CHANNEL" ] && WIFI_CHANNEL=11
+[ -z "$WIFI_COUNTRY" ] && WIFI_COUNTRY=NZ
+case "$WIFI_CHANNEL" in ""|*[!0-9]*) WIFI_CHANNEL=11 ;; esac
 FEAT_BT=$(config_get ALPHASOUND_BLUETOOTH)
 FEAT_SSH=$(config_get ALPHASOUND_SSHD)
 FEAT_DISPLAY=$(config_get ALPHASOUND_DISPLAY)
@@ -86,6 +93,11 @@ Cache-Control: no-store
   "ip": "$(json_esc "$IP")",
   "mode": "$(json_esc "$MODE")",
   "dev_ssid": "$(json_esc "$DEV_SSID")",
+  "wifi": {
+    "ssid":    "$(json_esc "$WIFI_SSID")",
+    "channel": $WIFI_CHANNEL,
+    "country": "$(json_esc "$WIFI_COUNTRY")"
+  },
   "features": {
     "bluetooth":  "$FEAT_BT",
     "sshd":       "$FEAT_SSH",
