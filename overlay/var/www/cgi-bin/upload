@@ -1,23 +1,11 @@
 #!/bin/sh
 # Accept a raw apkovl tarball POST'd to stdin, validate, swap, reboot.
 #
-# Ordering is critical for busybox httpd behaviour on large uploads:
-#   1. Emit "Status: 200 OK" + a bit of body text IMMEDIATELY. busybox
-#      kills CGIs that go silent on stdout for too long.
-#   2. Emit a stdout heartbeat ("." every few seconds) while the body
-#      streams in so the CGI-read timer never lapses.
-#   3. DRAIN THE BODY to tmpfs BEFORE any fallible work. If we exit
-#      mid-upload (e.g. a remount failure), busybox closes the socket
-#      with request bytes still in flight and the browser sees a
-#      "load failed" network error instead of our response.
-#   4. Only once the body is fully drained do we validate, and the
-#      SD swap + sync + reboot run in a subshell detached from httpd's
-#      stdio so the parent can exit and httpd flushes the response.
-#
-# Trade-off: 200 OK is committed before validation, so bad uploads
-# produce "200 OK with ERROR text in body" rather than a 400 status.
-# Auto-rollback on SD catches apkovls that manage to install but fail
-# to boot 3 times.
+# Under lighttpd the whole request body is already buffered by the
+# server by the time the CGI starts — we just read CONTENT_LENGTH
+# bytes from stdin and process normally. No heartbeats, no chunking,
+# no response-before-body games needed (those were workarounds for
+# busybox httpd's quirks, which we're no longer using).
 
 . /etc/alphasound/session.sh
 require_session
@@ -28,87 +16,46 @@ BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
 TMP=/tmp/alphasound.upload.$$
-HEARTBEAT=""
 
-cleanup() {
-    [ -n "$HEARTBEAT" ] && kill "$HEARTBEAT" 2>/dev/null
-    rm -f "$TMP" 2>/dev/null
-    return 0
-}
-trap cleanup EXIT
-
-early_reply() {
+reply() {
     printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
     exit
 }
 
-[ "$REQUEST_METHOD" = "POST" ] || early_reply "405 Method Not Allowed" "POST a tarball as the request body"
-[ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || early_reply "411 Length Required" "missing or empty body"
+trap 'rm -f "$TMP"' EXIT
 
-# ---- commit to 200 OK + start heartbeat ---------------------------
-printf 'Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n'
-printf 'receiving %s bytes ' "$CONTENT_LENGTH"
+[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "POST a tarball as the request body"
+[ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || reply "411 Length Required" "missing or empty body"
 
-(while sleep 4; do printf '.\n'; done) &
-HEARTBEAT=$!
-
-# ---- drain body to tmpfs FIRST ------------------------------------
-# Everything here MUST complete so busybox httpd can close the socket
-# with the client-side send finished. Any error later is reported in
-# the response body text, not by breaking the transport.
-set +e
 head -c "$CONTENT_LENGTH" > "$TMP"
-body_rc=$?
-set -e
 
-kill "$HEARTBEAT" 2>/dev/null
-wait "$HEARTBEAT" 2>/dev/null
-HEARTBEAT=""
-
-if [ "$body_rc" -ne 0 ]; then
-    printf '\nERROR: upload interrupted\n'
-    exit 1
-fi
-
-printf ' ok\n'
-
-# ---- validate (body already drained; failures won't break client) -
+# Accept either a gzipped tar or a bare tar; re-gzip the bare case so
+# the boot-time apkovl reader (which only knows .tar.gz) is happy.
 if tar -tzf "$TMP" >/dev/null 2>&1; then
     :
 elif tar -tf "$TMP" >/dev/null 2>&1; then
-    printf 'gzipping (client pre-extracted the wrapper)... '
-    if gzip -c "$TMP" > "$TMP.gz" 2>/dev/null && mv "$TMP.gz" "$TMP"; then
-        printf 'ok\n'
-    else
-        printf 'FAILED\n'
-        exit 1
-    fi
+    gzip -c "$TMP" > "$TMP.gz" 2>/dev/null \
+        || reply "500 Internal Server Error" "re-gzip failed"
+    mv "$TMP.gz" "$TMP"
 else
-    printf 'ERROR: not a valid tar or tar.gz\n'
-    exit 1
+    reply "400 Bad Request" "uploaded file is not a valid tar or tar.gz"
 fi
 
-if ! ( . /etc/alphasound/apkovl-check.sh; check_apkovl_compat "$TMP" >/dev/null 2>&1 ); then
-    printf 'ERROR: apkovl Alpine major version mismatch (see /var/log/messages)\n'
-    logger -t alphasound-upload "apkovl compat check failed" 2>/dev/null || true
-    exit 1
-fi
+. /etc/alphasound/apkovl-check.sh
+check_apkovl_compat "$TMP"
 
-printf 'swapping apkovl and rebooting. reconnect to the AP in ~30s.\n'
+mount -o remount,rw "$BOOT"
+mv "$APKOVL" "$BAK" 2>/dev/null || true
+mv "$TMP" "$APKOVL"
+touch "$BOOT/.boot_pending"
+rm -f "$BOOT/.boot_count"
+sync
+mount -o remount,ro "$BOOT" 2>/dev/null || true
 
-# Background subshell owns TMP now — cancel the cleanup trap.
+# TMP has been moved; disable the cleanup trap.
 trap - EXIT
 
-(
-    exec >/dev/null 2>&1 </dev/null
-    mount -o remount,rw "$BOOT"
-    mv "$APKOVL" "$BAK" 2>/dev/null || true
-    mv "$TMP" "$APKOVL"
-    touch "$BOOT/.boot_pending"
-    rm -f "$BOOT/.boot_count"
-    sync
-    mount -o remount,ro "$BOOT" 2>/dev/null || true
-    reboot
-) &
-
-exit 0
+# Reboot in the background so the HTTP response flushes to the client
+# before the device goes offline.
+( sleep 1; reboot ) &
+reply "200 OK" "update applied — rebooting. Reconnect to the AP in ~30s."

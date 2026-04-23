@@ -25,6 +25,7 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${
 PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils \
           wpa_supplicant jq busybox-extras \
+          lighttpd \
           python3 py3-pillow py3-numpy py3-libgpiod font-noto \
           v4l-utils \
           gcompat bzip2"
@@ -39,7 +40,7 @@ SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop alphasound-clock"
 # logs errors trying to talk to /dev/rtc on every boot. We get our time
 # from NTP once we're online (client mode) or from file-touch mtimes.
 BOOT_SVCS="bootmisc hostname modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features alphasound-splash"
-DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd"
+DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd lighttpd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
