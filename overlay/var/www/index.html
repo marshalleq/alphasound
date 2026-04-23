@@ -461,18 +461,32 @@ $('pull-update').onclick = async () => {
   } catch (e) { log('install failed: ' + e.message); }
 };
 
-$('upload').onclick = async () => {
+$('upload').onclick = () => {
   const f = $('file').files[0];
   if (!f) { log('pick a file first'); return; }
-  log(`uploading ${(f.size / 1024 / 1024).toFixed(1)} MB…`);
-  try {
-    const r = await fetch('/cgi-bin/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: f,
-    });
-    log((await r.text()).trim());
-  } catch (e) { log('upload failed: ' + e.message); }
+  const totalMB = (f.size / 1024 / 1024).toFixed(1);
+  log(`uploading ${totalMB} MB…`);
+  // XHR rather than fetch: fetch's request-body progress isn't supported
+  // across browsers, and a ~60 MB upload over AP WiFi takes long enough
+  // that the user needs real feedback to know it hasn't hung.
+  const started = Date.now();
+  const xhr = new XMLHttpRequest();
+  xhr.timeout = 5 * 60 * 1000;
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const mb = (e.loaded / 1024 / 1024).toFixed(1);
+    const pct = Math.floor(e.loaded / e.total * 100);
+    const elapsed = Math.max((Date.now() - started) / 1000, 0.1);
+    const speed = (e.loaded / 1024 / 1024 / elapsed).toFixed(2);
+    log(`uploading ${mb} / ${totalMB} MB  (${pct}%, ${speed} MB/s)`);
+  };
+  xhr.onload = () => log((xhr.responseText || '').trim() || `done (status ${xhr.status})`);
+  xhr.onerror = () => log('upload failed: network error');
+  xhr.ontimeout = () => log('upload failed: timed out after 5 min');
+  xhr.onabort = () => log('upload aborted');
+  xhr.open('POST', '/cgi-bin/upload');
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.send(f);
 };
 
 $('restart').onclick = async () => {
