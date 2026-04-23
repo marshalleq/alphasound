@@ -22,11 +22,24 @@ start() {
     [ -f /etc/alphasound-version ] || return 0
     ts=$(stat -c %Y /etc/alphasound-version 2>/dev/null)
     [ -n "$ts" ] && [ "$ts" -gt 0 ] || return 0
-    # busybox date doesn't accept the GNU `-s @unixtime` form, so use
-    # awk's strftime to format into a shape busybox does parse.
-    fmt=$(awk -v t="$ts" 'BEGIN { print strftime("%Y-%m-%d %H:%M:%S", t) }')
-    [ -n "$fmt" ] || return 0
-    ebegin "seeding clock from build time ($fmt)"
-    date -s "$fmt" >/dev/null 2>&1
-    eend $?
+
+    ebegin "seeding clock from build time (unix: $ts)"
+
+    # Cascade through formats busybox may or may not accept:
+    #   1. `-s @unixtime`   GNU form, present in recent busybox
+    #   2. `-d @ts +FMT`    conversion helper then busybox-friendly set
+    #   3. `awk strftime`   if awk was compiled with GNU extensions
+    # Skip python3 on purpose — spawning it at sysinit adds ~1 s.
+    if date -s "@$ts" >/dev/null 2>&1; then
+        eend 0; return 0
+    fi
+    fmt=$(date -d "@$ts" +'%Y-%m-%d %H:%M:%S' 2>/dev/null)
+    if [ -n "$fmt" ] && date -s "$fmt" >/dev/null 2>&1; then
+        eend 0; return 0
+    fi
+    fmt=$(awk -v t="$ts" 'BEGIN { print strftime("%Y-%m-%d %H:%M:%S", t) }' 2>/dev/null)
+    if [ -n "$fmt" ] && date -s "$fmt" >/dev/null 2>&1; then
+        eend 0; return 0
+    fi
+    eend 1
 }
