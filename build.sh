@@ -302,6 +302,12 @@ $SUDO mount "${LOOP}p1" "${MOUNT_DIR}"
 echo "Extracting Alpine to boot partition..."
 $SUDO tar xzf "${WORK_DIR}/${ALPINE_TARBALL}" -C "${MOUNT_DIR}/"
 
+# Disable IPv6 at the kernel level. We're a single-interface AirPlay +
+# Bluetooth appliance — nothing we run benefits from v6, and it just
+# generates log noise when services try to bind to :: on an interface
+# that never gets a v6 address.
+$SUDO sed -i 's/$/ ipv6.disable=1/' "${MOUNT_DIR}/cmdline.txt"
+
 # Ship the pre-built apkovl. Alpine's diskless init extracts this to / on
 # every boot, giving us a fully-installed system without running apk.
 $SUDO cp "${APKOVL_FILE}" "${MOUNT_DIR}/alphasound.apkovl.tar.gz"
