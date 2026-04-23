@@ -1,16 +1,25 @@
 #!/bin/sh
-# Accept a raw apkovl tarball POST'd to stdin, validate, swap atomically,
-# arm the rollback flag, and reboot. The web UI sends raw bytes (not
-# multipart/form-data) so we don't need any multipart parsing in shell.
+# Accept a raw apkovl tarball POST'd to stdin, validate, swap, reboot.
 #
-# Ordering is deliberate: validate first, reply 200 OK next, *then*
-# background the swap+sync+reboot. A 60+ MB apkovl copy from tmpfs to
-# FAT32 plus sync takes tens of seconds on a Pi Zero 2 W, and busybox
-# httpd's CGI read timeout will otherwise fire before we get to write
-# the response — the browser then sees "Empty reply from server" even
-# though the upload itself succeeded. Detaching the backgrounded
-# subshell from httpd's stdio lets the parent exit cleanly so httpd
-# flushes the response to the client.
+# Several interventions needed to survive busybox httpd's behaviour on
+# large uploads:
+#   1. Commit to 200 OK and start streaming the response BEFORE
+#      consuming the request body. busybox kills CGIs that go silent
+#      on stdout for too long, and reading 60 MB over WiFi easily
+#      exceeds that window.
+#   2. Emit a stdout heartbeat ("." every few seconds) while the body
+#      streams in, so the CGI-read timer never lapses regardless of
+#      how slow the client's WiFi is.
+#   3. Stream the body directly to the final SD location (.new), not
+#      tmpfs + cross-filesystem mv — avoids copying 60 MB twice.
+#   4. Fork the sync + reboot into a subshell detached from httpd's
+#      stdio so the parent exits cleanly and httpd flushes the
+#      response to the client without waiting.
+#
+# Trade-off: we commit to 200 OK before validating, so a malformed
+# upload produces "200 OK with ERROR text in body" rather than a 400
+# status. Acceptable — the auto-rollback safety net on SD catches
+# apkovls that install but then fail to boot 3 times.
 
 . /etc/alphasound/session.sh
 require_session
@@ -20,58 +29,90 @@ set -e
 BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
-TMP=/tmp/alphasound.upload.$$
+NEW=$BOOT/alphasound.apkovl.tar.gz.new
 
-reply() {
-    code=$1; body=$2
-    printf 'Status: %s\r\n' "$code"
-    printf 'Content-Type: text/plain\r\n\r\n'
-    printf '%s\n' "$body"
+REMOUNT_RW=0
+HEARTBEAT=""
+cleanup() {
+    [ -n "$HEARTBEAT" ] && kill "$HEARTBEAT" 2>/dev/null
+    rm -f "$NEW" 2>/dev/null
+    [ "$REMOUNT_RW" = 1 ] && mount -o remount,ro "$BOOT" 2>/dev/null
+    return 0
+}
+trap cleanup EXIT
+
+early_reply() {
+    printf 'Status: %s\r\nContent-Type: text/plain\r\n\r\n%s\n' "$1" "$2"
     exit
 }
 
-trap 'rm -f "$TMP"' EXIT
+[ "$REQUEST_METHOD" = "POST" ] || early_reply "405 Method Not Allowed" "POST a tarball as the request body"
+[ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || early_reply "411 Length Required" "missing or empty body"
 
-[ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "POST a tarball as the request body"
-[ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || reply "411 Length Required" "missing or empty body"
+# ---- commit to 200 OK, start response, kick off heartbeat ----------
+printf 'Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n'
+printf 'receiving %s bytes ' "$CONTENT_LENGTH"
 
-# Stream stdin to a temp file
-head -c "$CONTENT_LENGTH" > "$TMP"
+(while sleep 4; do printf '.\n'; done) &
+HEARTBEAT=$!
 
-# Accept either a gzipped tar (normal) or a bare tar (some OSes strip
-# the .gz on download). Re-gzip the bare case so the boot-time apkovl
-# reader, which only knows .tar.gz, is happy.
-if tar -tzf "$TMP" >/dev/null 2>&1; then
-    :
-elif tar -tf "$TMP" >/dev/null 2>&1; then
-    gzip -c "$TMP" > "$TMP.gz" 2>/dev/null \
-        || reply "500 Internal Server Error" "re-gzip failed"
-    mv "$TMP.gz" "$TMP"
-else
-    reply "400 Bad Request" "uploaded file is not a valid tar or tar.gz"
+# ---- remount boot rw and stream body straight to SD ---------------
+mount -o remount,rw "$BOOT"
+REMOUNT_RW=1
+
+set +e
+head -c "$CONTENT_LENGTH" > "$NEW"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+    printf '\nERROR: upload interrupted\n'
+    exit 1
 fi
 
-# Refuse apkovls built against a different Alpine major version
-. /etc/alphasound/apkovl-check.sh
-check_apkovl_compat "$TMP"
+printf ' ok\n'
 
-# Respond before the slow work (see header comment).
-printf 'Status: 200 OK\r\n'
-printf 'Content-Type: text/plain\r\n\r\n'
-printf 'update received — swapping apkovl and rebooting. Reconnect to the AP in ~30s.\n'
+# ---- validate: must be a gzipped tar, or a bare tar we can re-gzip -
+if tar -tzf "$NEW" >/dev/null 2>&1; then
+    :
+elif tar -tf "$NEW" >/dev/null 2>&1; then
+    printf 'gzipping (client pre-extracted the wrapper)... '
+    if gzip -c "$NEW" > "$NEW.gz" 2>/dev/null && mv "$NEW.gz" "$NEW"; then
+        printf 'ok\n'
+    else
+        printf 'failed\n'
+        exit 1
+    fi
+else
+    printf 'ERROR: not a valid tar or tar.gz\n'
+    exit 1
+fi
 
-# Subshell will own the temp file now; disable the parent's cleanup trap.
+# Major-version compat. Subshell isolates apkovl-check.sh's `exit` call
+# so it can't abort our flow or inject its own Status header over ours.
+if ! ( . /etc/alphasound/apkovl-check.sh; check_apkovl_compat "$NEW" >/dev/null 2>&1 ); then
+    printf 'ERROR: apkovl Alpine major version mismatch (see /var/log/messages)\n'
+    logger -t alphasound-upload "apkovl compat check failed" 2>/dev/null || true
+    exit 1
+fi
+
+# ---- swap (same-filesystem rename, instant), stop heartbeat -------
+mv "$APKOVL" "$BAK" 2>/dev/null || true
+mv "$NEW" "$APKOVL"
+touch "$BOOT/.boot_pending"
+rm -f "$BOOT/.boot_count"
+
+kill "$HEARTBEAT" 2>/dev/null
+wait "$HEARTBEAT" 2>/dev/null
+HEARTBEAT=""
+
+printf 'installed — rebooting, reconnect to the AP in ~30s\n'
+
+# Background subshell owns the SD remount now.
+REMOUNT_RW=0
 trap - EXIT
 
-# Detach from httpd's stdio so the parent can exit cleanly (letting
-# httpd flush the response), while the slow SD swap + sync continues.
 (
     exec >/dev/null 2>&1 </dev/null
-    mount -o remount,rw "$BOOT"
-    mv "$APKOVL" "$BAK" 2>/dev/null || true
-    mv "$TMP" "$APKOVL"
-    touch "$BOOT/.boot_pending"
-    rm -f "$BOOT/.boot_count"
     sync
     mount -o remount,ro "$BOOT" 2>/dev/null || true
     reboot

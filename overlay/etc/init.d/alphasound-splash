@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+# Paint a boot splash to the Pirate Audio LCD long before the display
+# service is ready. Only fires when ALPHASOUND_DISPLAY=pirate-audio —
+# the C binary is hard-wired for the Pirate Audio pinout + panel
+# geometry and would produce garbage on an Adafruit ST7789.
+
+description="Boot splash for Pirate Audio LCD"
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+BINARY=/usr/local/bin/alphasound-splash
+
+depend() {
+    need localmount
+    after modloop
+}
+
+start() {
+    [ -x "$BINARY" ] || return 0
+    [ -f "$CONFIG" ] || return 0
+    display=$(grep '^ALPHASOUND_DISPLAY=' "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2-)
+    [ "$display" = "pirate-audio" ] || return 0
+    ebegin "painting boot splash"
+    "$BINARY"
+    eend $?
+}
