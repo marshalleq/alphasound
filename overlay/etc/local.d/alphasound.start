@@ -87,27 +87,8 @@ save_persistent_state() {
     mount -o remount,ro /media/mmcblk0p1 2>/dev/null || true
 }
 
-# Generate httpd config with the current root password as basic-auth
-# credentials, then start busybox httpd. Auth is required for everything
-# under /cgi-bin/ (the action endpoints); the static index page is open
-# but reading it needs WPA2 access to the AP anyway.
-start_web_ui() {
-    log "starting web UI on http://10.0.10.1"
-    # No basic-auth — we use a HTML form login + session cookie instead
-    # (iOS keychain saves form credentials reliably; basic auth often
-    # gets refused). Each protected CGI calls require_session.
-    cat > /etc/httpd.conf << EOF
-H:/var/www
-I:index.html
-EOF
-    chmod 600 /etc/httpd.conf
-
-    # httpd (from busybox-extras package) daemonises by default. Silent
-    # on success; capture stderr so we can debug if it dies.
-    if ! httpd -p 80 -h /var/www -c /etc/httpd.conf 2>/tmp/httpd.err; then
-        log "httpd failed: $(cat /tmp/httpd.err 2>/dev/null)"
-    fi
-}
+# Web UI is served by lighttpd, enabled in the default runlevel and
+# started automatically by OpenRC — nothing to orchestrate here.
 
 # Resolve the output device to a concrete ALSA hw:... string.
 #   auto  — pick the last non-onboard card (USB / HAT DAC) and use it.
@@ -434,9 +415,6 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
     echo "================================================"
     echo
 } > /dev/console 2>&1
-
-# Start the web UI (after services so the status page reports accurate data)
-start_web_ui
 
 # Save state that might have been freshly generated this boot (host keys
 # on first boot, BT pairings during last session before shutdown).
