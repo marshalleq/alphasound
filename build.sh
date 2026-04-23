@@ -34,7 +34,7 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
 # driver never loads). shutdown lets openrc tear down cleanly. Our apkovl
 # replaces /etc/runlevels wholesale, so if we don't list these here, they
 # won't be enabled.
-SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
+SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop alphasound-clock"
 # hwclock excluded: Pi has no battery-backed RTC, so the service just
 # logs errors trying to talk to /dev/rtc on every boot. We get our time
 # from NTP once we're online (client mode) or from file-touch mtimes.

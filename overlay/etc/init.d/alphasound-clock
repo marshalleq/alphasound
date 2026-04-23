@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+# Seed the system clock from the apkovl's build timestamp.
+#
+# Pi Zero 2 W has no battery-backed RTC, so the kernel boots with the
+# clock at epoch 1970. Every file we extracted from the apkovl then
+# looks like it's from the far future, OpenRC logs "clock skew detected"
+# and pessimistically regenerates its deptree, and every boot-runlevel
+# service scribbles "adjusting mtime" lines to the console. Setting the
+# clock to /etc/alphasound-version's mtime (stamped at apkovl build
+# time) gives us a plausible-past time that's monotonically newer than
+# anything on the tmpfs rootfs, which silences the warnings and saves
+# a second or two of deptree churn. Real NTP corrects it properly once
+# we're in client mode.
+
+description="Seed system clock from apkovl build time"
+
+depend() {
+    before hwclock sysctl
+}
+
+start() {
+    [ -f /etc/alphasound-version ] || return 0
+    ts=$(stat -c %Y /etc/alphasound-version 2>/dev/null)
+    [ -n "$ts" ] && [ "$ts" -gt 0 ] || return 0
+    ebegin "seeding clock from build time"
+    date -s "@$ts" >/dev/null 2>&1
+    eend $?
+}

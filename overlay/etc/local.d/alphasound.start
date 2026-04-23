@@ -335,11 +335,19 @@ fi
 # Status banner — printed to /dev/console so it's the last thing on the
 # HDMI screen. Use rc-service status (canonical) for openrc-managed
 # services and pgrep for things we start ourselves (hostapd, bluealsa-aplay).
-# 5s sleep gives slower services like shairport-sync time to bind.
-sleep 5
-checkpoint ready
 svc_ok() { rc-service "$1" status 2>/dev/null | grep -q started; }
 proc_ok() { pgrep -x "$1" >/dev/null 2>&1; }
+
+# Poll for shairport-sync to finish binding instead of a flat `sleep 5`
+# — usually it's already started by the time we get here and we spend
+# no extra wall time, vs. unconditionally eating 5 seconds before.
+# Cap at 5s total so a stuck service can't wedge the banner.
+i=0
+while ! svc_ok shairport-sync && [ "$i" -lt 5 ]; do
+    sleep 1
+    i=$((i + 1))
+done
+checkpoint ready
 
 # Format checkpoint times for the banner: "0.45 / 4.20 / 8.10 / 13.50"
 boot_times() {
