@@ -127,6 +127,36 @@ input[type=file] { width: 100%; padding: 0.4rem; }
 </section>
 
 <section>
+<h2>WiFi (Standalone mode)</h2>
+<p class="muted">The access point your phone connects to in standalone mode. Change with care — a bad passphrase locks you out until you edit <code>alphasound.txt</code> on the SD card. If playback is choppy, try a different channel (1 / 6 / 11 are non-overlapping; the rest are compromises).</p>
+<form id="wifi-form" autocomplete="off">
+  <p><label>Network name (SSID)
+    <input type="text" id="wifi_ssid" name="ssid" maxlength="32" required></label></p>
+  <p><label>Passphrase (8-63 chars, leave blank to keep current)
+    <input type="password" id="wifi_pass" name="passphrase" minlength="8" maxlength="63" autocomplete="new-password"></label></p>
+  <p><label>Channel
+    <select id="wifi_channel" name="channel">
+      <option value="1">1  (2.412 GHz, non-overlapping)</option>
+      <option value="2">2  (2.417 GHz)</option>
+      <option value="3">3  (2.422 GHz)</option>
+      <option value="4">4  (2.427 GHz)</option>
+      <option value="5">5  (2.432 GHz)</option>
+      <option value="6">6  (2.437 GHz, non-overlapping)</option>
+      <option value="7">7  (2.442 GHz)</option>
+      <option value="8">8  (2.447 GHz)</option>
+      <option value="9">9  (2.452 GHz)</option>
+      <option value="10">10 (2.457 GHz)</option>
+      <option value="11">11 (2.462 GHz, non-overlapping)</option>
+      <option value="12">12 (2.467 GHz, region-dependent)</option>
+      <option value="13">13 (2.472 GHz, region-dependent)</option>
+    </select></label></p>
+  <p><label>Country code (2 letters, uppercase — e.g. NZ, US, GB, AU)
+    <input type="text" id="wifi_country" name="country" maxlength="2" size="4" style="text-transform: uppercase;" required></label></p>
+  <button id="apply-wifi" type="button">Apply &amp; reboot</button>
+</form>
+</section>
+
+<section>
 <h2>Network mode</h2>
 <p class="muted">Standalone broadcasts the <code>Alphasound</code> WiFi for car/portable use. Client joins an existing network — useful at home, and unlocks "Check for updates" below. Wrong client credentials fall back to AP mode automatically.</p>
 <form id="mode-form">
@@ -270,6 +300,14 @@ async function refreshStatus() {
       $('client-fields').style.display = (s.mode === 'DEV') ? '' : 'none';
       $('update-mode-note').textContent = (s.mode === 'DEV') ? '' : '(switch to client mode first)';
       $('check-update').disabled = (s.mode !== 'DEV');
+      if (s.wifi) {
+        $('wifi_ssid').value = s.wifi.ssid || 'Alphasound';
+        $('wifi_channel').value = String(s.wifi.channel || 11);
+        $('wifi_country').value = s.wifi.country || 'NZ';
+        // Passphrase deliberately not echoed — shown as blank with a
+        // "leave blank to keep current" hint, to avoid scraping and
+        // avoid nulling it out on accidental submit.
+      }
 
       if (s.features) {
         $('feat_bt').checked = (s.features.bluetooth === 'yes');
@@ -339,6 +377,31 @@ $('feat_brightness').addEventListener('change', async e => {
     if (!r.ok) log('brightness: ' + (await r.text()).trim());
   } catch (err) { log('brightness update failed: ' + err.message); }
 });
+
+$('apply-wifi').onclick = async () => {
+  const ssid = $('wifi_ssid').value.trim();
+  const pass = $('wifi_pass').value;
+  const channel = $('wifi_channel').value;
+  const country = $('wifi_country').value.trim().toUpperCase();
+  if (!ssid) { log('SSID required'); return; }
+  if (pass && (pass.length < 8 || pass.length > 63)) { log('passphrase must be 8-63 characters'); return; }
+  if (!/^[A-Z]{2}$/.test(country)) { log('country must be a 2-letter code'); return; }
+  const warn = pass
+    ? '\n\nA wrong passphrase locks you out until you edit alphasound.txt on the SD card.'
+    : '';
+  if (!confirm(`Apply WiFi changes and reboot?\nSSID: ${ssid}\nChannel: ${channel}\nCountry: ${country}${warn}`)) return;
+  log('applying WiFi…');
+  try {
+    const data = { ssid, channel, country };
+    if (pass) data.passphrase = pass;
+    const r = await fetch('/cgi-bin/setwifi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString(),
+    });
+    log(await r.text());
+  } catch (e) { log('wifi apply failed: ' + e.message); }
+};
 
 $('apply-mode').onclick = async () => {
   const form = $('mode-form');
