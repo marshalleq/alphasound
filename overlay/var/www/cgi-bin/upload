@@ -33,6 +33,15 @@ trap cleanup EXIT
 [ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "POST a tarball as the request body"
 [ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || reply "411 Length Required" "missing or empty body"
 
+# Pre-flight: confirm the SD partition has room for the body + a small
+# buffer. df works on the read-only mount; we want to fail here rather
+# than 90s into a slow upload when the filesystem fills up mid-write.
+avail_kb=$(df -k "$BOOT" 2>/dev/null | awk 'NR==2 { print $4 }')
+needed_kb=$(( (CONTENT_LENGTH + 1023) / 1024 + 2048 ))
+if [ -n "$avail_kb" ] && [ "$avail_kb" -lt "$needed_kb" ]; then
+    reply "507 Insufficient Storage" "not enough free space on SD: need ~${needed_kb}KB, have ${avail_kb}KB"
+fi
+
 mount -o remount,rw "$BOOT"
 REMOUNT_RW=1
 
