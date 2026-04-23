@@ -39,11 +39,18 @@ case "$URL" in
     *) reply "400 Bad Request" "URL must be a GitHub release asset" ;;
 esac
 
+STATUS=/tmp/alphasound-updating
+status() { echo "$1" > "$STATUS" 2>/dev/null; }
+
+status "Downloading update…"
+
 mount -o remount,rw "$BOOT"
 REMOUNT_RW=1
 
 wget -q -T 120 -O "$NEW" "$URL" \
     || reply "502 Bad Gateway" "download failed (no internet? URL wrong?)"
+
+status "Validating…"
 
 tar -tzf "$NEW" >/dev/null 2>&1 \
     || reply "400 Bad Request" "downloaded file is not a valid tar.gz"
@@ -51,12 +58,16 @@ tar -tzf "$NEW" >/dev/null 2>&1 \
 . /etc/alphasound/apkovl-check.sh
 check_apkovl_compat "$NEW"
 
+status "Applying update…"
+
 mv "$APKOVL" "$BAK" 2>/dev/null || true
 mv "$NEW" "$APKOVL"
 touch "$BOOT/.boot_pending"
 rm -f "$BOOT/.boot_count"
 sync
 mount -o remount,ro "$BOOT" 2>/dev/null || true
+
+status "Rebooting…"
 
 REMOUNT_RW=0
 trap - EXIT
