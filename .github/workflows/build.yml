@@ -10,9 +10,6 @@ on:
 permissions:
   contents: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
@@ -26,31 +23,28 @@ jobs:
       - name: Build image
         run: ./build.sh
 
-      - name: Get date for release tag
-        id: date
-        run: echo "date=$(date +'%Y%m%d')" >> "$GITHUB_OUTPUT"
-
+      # `gh release create` ships pre-installed on GitHub runners, so we
+      # avoid the softprops/action-gh-release dependency (which was the
+      # last lingering Node 20 action in this workflow).
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ steps.date.outputs.date }}-${{ github.run_number }}
-          name: Alphasound ${{ steps.date.outputs.date }}
-          body: |
-            Automated build from `main` branch.
-
-            **Base OS**: Alpine Linux 3.21 (aarch64, diskless)
-            **Shairport-sync**: from Alpine community repo
-            **Bluetooth A2DP**: auto-pairing for non-Apple devices
-            **Filesystem**: Runs entirely from RAM — SD card is read-only by design
-
-            ## Quick start
-            1. Flash the `.img.xz` to an SD card (Raspberry Pi Imager can flash `.xz` directly)
-            2. Edit `alphasound.txt` on the SD card to set your preferences
-            3. Insert SD card, power on, connect to the WiFi network, AirPlay
-          files: |
-            deploy/alphasound.img.xz
-            deploy/alphasound.apkovl.tar.gz
-          draft: false
-          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          DATE: ${{ github.run_number }}
+        run: |
+          DATE_STR=$(date +'%Y%m%d')
+          TAG="build-${DATE_STR}-${DATE}"
+          gh release create "$TAG" \
+            --title "Alphasound ${DATE_STR}" \
+            --notes "Automated build from \`main\` branch.
+
+          **Base OS**: Alpine Linux 3.21 (aarch64, diskless)
+          **Shairport-sync**: from Alpine community repo
+          **Bluetooth A2DP**: auto-pairing for non-Apple devices
+          **Filesystem**: Runs entirely from RAM — SD card is read-only by design
+
+          ## Quick start
+          1. Flash the \`.img.xz\` to an SD card (Raspberry Pi Imager can flash \`.xz\` directly)
+          2. Edit \`alphasound.txt\` on the SD card to set your preferences
+          3. Insert SD card, power on, connect to the WiFi network, AirPlay" \
+            deploy/alphasound.img.xz \
+            deploy/alphasound.apkovl.tar.gz
