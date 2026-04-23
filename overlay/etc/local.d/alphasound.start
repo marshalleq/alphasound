@@ -388,7 +388,7 @@ WLAN_STATE=$(ip link show wlan0 2>/dev/null | head -1 | grep -oE 'state [A-Z]+' 
     fi
     echo "  Web UI:     http://${WLAN_IP%/*}/"
     echo "  Boot time:  $(boot_times) seconds"
-    echo "              (local-d / network / audio / ready)"
+    echo "              (local-d / network / audio / roon / ready)"
     echo "================================================"
     echo
 } > /dev/console 2>&1
