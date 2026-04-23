@@ -478,6 +478,8 @@ $('upload').onclick = async () => {
   const started = Date.now();
   try {
     const totalChunks = Math.ceil(total / CHUNK);
+    const CHUNK_TIMEOUT_MS = 10000;   // hard cap per chunk; triggers retry
+    const INTER_CHUNK_DELAY_MS = 150; // let busybox httpd recycle its socket
     for (let off = 0; off < total; off += CHUNK) {
       const end = Math.min(off + CHUNK, total);
       const n = Math.floor(off / CHUNK) + 1;
@@ -485,21 +487,26 @@ $('upload').onclick = async () => {
       let lastErr;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         log(`sending chunk ${n}/${totalChunks} (offset ${(off / 1024 / 1024).toFixed(1)} MB)${attempt > 1 ? `, attempt ${attempt}` : ''}…`);
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), CHUNK_TIMEOUT_MS);
         try {
           const r = await fetch(
             `/cgi-bin/upload-chunk?offset=${off}&total=${total}`,
             { method: 'POST',
               headers: { 'Content-Type': 'application/octet-stream' },
-              body: slice },
+              body: slice,
+              signal: ctrl.signal },
           );
+          clearTimeout(timer);
           if (!r.ok) throw new Error(`${r.status} ${(await r.text()).trim()}`);
           lastErr = null;
           break;
         } catch (e) {
+          clearTimeout(timer);
           lastErr = e;
           if (attempt === MAX_ATTEMPTS) break;
           const delay = attempt * 1000;
-          log(`chunk ${n} failed (${e.message}); retry in ${delay}ms`);
+          log(`chunk ${n} failed (${e.name === 'AbortError' ? 'timed out' : e.message}); retry in ${delay}ms`);
           await new Promise(r => setTimeout(r, delay));
         }
       }
@@ -507,6 +514,7 @@ $('upload').onclick = async () => {
       const elapsed = (Date.now() - started) / 1000;
       const speed = (end / 1024 / 1024 / elapsed).toFixed(2);
       log(`uploaded ${(end / 1024 / 1024).toFixed(1)} / ${totalMB} MB  (avg ${speed} MB/s)`);
+      if (end < total) await new Promise(r => setTimeout(r, INTER_CHUNK_DELAY_MS));
     }
     const r = await fetch('/cgi-bin/upload-finalize', { method: 'POST' });
     log(await r.text());
