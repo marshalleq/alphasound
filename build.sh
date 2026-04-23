@@ -186,6 +186,13 @@ REPOS
         grep -q '^rc_parallel=' /chroot/etc/rc.conf \
             || echo 'rc_parallel=\"YES\"' >> /chroot/etc/rc.conf
 
+        # IPv6 is disabled at the kernel level (cmdline ipv6.disable=1),
+        # so Alpine's default sysctl entries under net.ipv6.* don't map
+        # to anything real and generate 'unknown key' errors at boot.
+        # Strip those lines from every sysctl config.
+        find /chroot/etc/sysctl.conf /chroot/etc/sysctl.d -type f 2>/dev/null \
+            | xargs -r sed -i '/\\.ipv6\\./d'
+
         # Bake a shairport-sync.conf matching the defaults in the shipped
         # alphasound.txt. At boot, alphasound.start generates the same
         # file from config; if the user hasn't edited anything, the two
