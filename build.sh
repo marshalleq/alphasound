@@ -22,13 +22,34 @@ ALPINE_ARCH="aarch64"
 ALPINE_TARBALL="alpine-rpi-${ALPINE_RELEASE}-${ALPINE_ARCH}.tar.gz"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${ALPINE_ARCH}/${ALPINE_TARBALL}"
 
-PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
+# Variant selector. "home" = full-featured (default), "car" = stripped
+# for fastest boot — no display stack, no Python, no Roon prerequisites,
+# no CEC, minimal package footprint so the apkovl extract at boot is
+# smaller and less userland needs to come up. Build CI invokes us once
+# per variant and publishes both .img.xz + .apkovl.tar.gz files.
+VARIANT="${VARIANT:-home}"
+case "$VARIANT" in
+    home|car) ;;
+    *) echo "Unknown VARIANT='$VARIANT' (expected home or car)"; exit 1 ;;
+esac
+echo "Variant: ${VARIANT}"
+
+PACKAGES_COMMON="alpine-base shairport-sync hostapd dnsmasq avahi openssh \
           bluez bluez-alsa bluez-alsa-utils bluez-alsa-openrc alsa-utils \
           wpa_supplicant jq \
-          lighttpd \
-          python3 py3-pillow py3-numpy py3-libgpiod font-noto \
-          v4l-utils \
-          gcompat bzip2"
+          lighttpd"
+
+if [ "$VARIANT" = "home" ]; then
+    # Home adds: Pirate Audio / Adafruit SPI display + HDMI rendering
+    # (Python stack), HDMI-CEC (v4l-utils + avahi-tools for DACP mDNS),
+    # Roon Bridge prereqs (gcompat + bzip2).
+    PACKAGES="$PACKAGES_COMMON avahi-tools \
+              python3 py3-pillow py3-numpy py3-libgpiod font-noto \
+              v4l-utils \
+              gcompat bzip2"
+else
+    PACKAGES="$PACKAGES_COMMON"
+fi
 
 # Runlevels: sysinit + shutdown are critical. sysinit mounts devfs and the
 # modloop squashfs (which provides /lib/modules — without this the WiFi
@@ -41,17 +62,24 @@ SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop alphasound-clock"
 # syslog excluded: this appliance logs to /dev/console via alphasound.start
 # and to stderr via OpenRC; persistent syslog to /var/log/messages isn't
 # useful when the rootfs is tmpfs (wiped on every reboot) and saves ~1s.
-BOOT_SVCS="bootmisc hostname modules sysctl alphasound-rollback alphasound-persist alphasound-features alphasound-audio alphasound-splash"
+BOOT_SVCS_COMMON="bootmisc hostname modules sysctl alphasound-rollback alphasound-persist alphasound-features alphasound-audio"
+if [ "$VARIANT" = "home" ]; then
+    BOOT_SVCS="$BOOT_SVCS_COMMON alphasound-splash"
+else
+    # Car variant skips the splash binary entirely — no display hardware
+    # is assumed, and boot speed is the priority.
+    BOOT_SVCS="$BOOT_SVCS_COMMON"
+fi
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd lighttpd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="${SCRIPT_DIR}/.work"
 MOUNT_DIR="${WORK_DIR}/mnt"
-CHROOT_DIR="${WORK_DIR}/chroot"
-APKOVL_FILE="${WORK_DIR}/alphasound.apkovl.tar.gz"
+CHROOT_DIR="${WORK_DIR}/chroot-${VARIANT}"
+APKOVL_FILE="${WORK_DIR}/alphasound-${VARIANT}.apkovl.tar.gz"
 OUTPUT_DIR="${SCRIPT_DIR}/deploy"
-OUTPUT_IMAGE="${OUTPUT_DIR}/alphasound.img"
+OUTPUT_IMAGE="${OUTPUT_DIR}/alphasound-${VARIANT}.img"
 
 # Version stamp embedded in the apkovl so the web UI can show what's
 # running. Prefer git describe if available; otherwise UTC date.
@@ -87,6 +115,7 @@ docker run --rm \
     -v "${CHROOT_DIR}:/chroot" \
     -v "${SCRIPT_DIR}/overlay:/overlay:ro" \
     -v "${SCRIPT_DIR}/splash:/splash:ro" \
+    -e VARIANT="${VARIANT}" \
     "alpine:${ALPINE_VERSION}" \
     sh -ec "
         echo 'https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main' > /etc/apk/repositories
@@ -95,8 +124,11 @@ docker run --rm \
         # Host-container tooling: C compiler (+ Linux UAPI headers for
         # spidev.h) for the boot splash, plus Python+PIL+Noto to
         # pre-render its splash image. These don't land in the chroot
-        # — they stay in the ephemeral build image.
-        apk add --no-cache gcc musl-dev linux-headers python3 py3-pillow font-noto
+        # — they stay in the ephemeral build image. Car variant skips
+        # the splash so it doesn't need gcc/PIL/font-noto either.
+        if [ \"\$VARIANT\" = home ]; then
+            apk add --no-cache gcc musl-dev linux-headers python3 py3-pillow font-noto
+        fi
 
         # apk --root reads /chroot/etc/apk/{repositories,keys}, NOT the
         # host's. So we initialise those in the chroot BEFORE installing.
@@ -176,10 +208,13 @@ REPOS
 
         # Boot splash: compile the C binary and pre-render its image.
         # Binary lands in /usr/local/bin, image bytes in /usr/share.
-        echo '--- building alphasound-splash ---'
-        mkdir -p /chroot/usr/local/bin /chroot/usr/share/alphasound-splash
-        gcc -O2 -Wall -o /chroot/usr/local/bin/alphasound-splash /splash/alphasound-splash.c
-        python3 /splash/gen-splash.py /chroot/usr/share/alphasound-splash/splash.raw
+        # Skipped for the car variant since it has no display hardware.
+        if [ \"\$VARIANT\" = home ]; then
+            echo '--- building alphasound-splash ---'
+            mkdir -p /chroot/usr/local/bin /chroot/usr/share/alphasound-splash
+            gcc -O2 -Wall -o /chroot/usr/local/bin/alphasound-splash /splash/alphasound-splash.c
+            python3 /splash/gen-splash.py /chroot/usr/share/alphasound-splash/splash.raw
+        fi
 
         # Enable OpenRC parallel service startup so the default runlevel
         # uses all four cores instead of one. Covers both the commented
@@ -258,6 +293,28 @@ SHAIRPORT_EOF
 
         echo '--- chroot ready ---'
     "
+
+# --- Strip display/Roon artefacts for the car variant ---
+# These files are shipped via our overlay unconditionally so that the
+# home variant's build is simple; for car we delete them post-overlay
+# so they don't inflate the apkovl and so the init system doesn't try
+# to start services whose binaries have been removed. Roon goes too —
+# gcompat+bzip2 are absent from the car PACKAGES list so RoonBridge
+# could never extract or run anyway; its CGI buttons would just error.
+if [ "$VARIANT" = "car" ]; then
+    echo "Stripping display/Roon files for car variant..."
+    $SUDO rm -f  "${CHROOT_DIR}/usr/local/bin/alphasound-display.py"
+    $SUDO rm -f  "${CHROOT_DIR}/usr/local/bin/alphasound-splash"
+    $SUDO rm -rf "${CHROOT_DIR}/usr/share/alphasound-splash"
+    $SUDO rm -f  "${CHROOT_DIR}/etc/init.d/alphasound-display"
+    $SUDO rm -f  "${CHROOT_DIR}/etc/init.d/alphasound-splash"
+    $SUDO rm -f  "${CHROOT_DIR}/etc/init.d/alphasound-roon"
+    $SUDO rm -f  "${CHROOT_DIR}/var/www/cgi-bin/setbrightness"
+    $SUDO rm -f  "${CHROOT_DIR}/var/www/cgi-bin/install-roon"
+    $SUDO rm -f  "${CHROOT_DIR}/var/www/cgi-bin/uninstall-roon"
+    # alphasound-splash isn't in BOOT_SVCS for car, so the runlevel
+    # symlink was never created — nothing to clean up there.
+fi
 
 # --- Pack the chroot as the apkovl ---
 # Only include directories that genuinely need overriding. Crucially we
@@ -392,8 +449,8 @@ xz -9 -T0 -f "${OUTPUT_IMAGE}"
 
 # Also publish the bare apkovl alongside the full image so on-device
 # updates can use it (web UI upload form). Much smaller than the .img.xz.
-cp "${APKOVL_FILE}" "${OUTPUT_DIR}/alphasound.apkovl.tar.gz"
+cp "${APKOVL_FILE}" "${OUTPUT_DIR}/alphasound-${VARIANT}.apkovl.tar.gz"
 
 echo ""
 echo "=== Build complete ==="
-ls -lh "${OUTPUT_IMAGE}.xz" "${OUTPUT_DIR}/alphasound.apkovl.tar.gz"
+ls -lh "${OUTPUT_IMAGE}.xz" "${OUTPUT_DIR}/alphasound-${VARIANT}.apkovl.tar.gz"

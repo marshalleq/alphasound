@@ -159,7 +159,7 @@ If client mode credentials are wrong, an early-boot check times out after 30s wi
 Two paths:
 
 1. **Pull from GitHub** (client mode): hit "Check for updates", then "Download & install" if there's a newer release.
-2. **Upload manually** (any mode): download `alphasound.apkovl.tar.gz` from [Releases](../../releases) onto your phone/laptop, then upload via the web UI.
+2. **Upload manually** (any mode): download `alphasound-home.apkovl.tar.gz` or `alphasound-car.apkovl.tar.gz` from [Releases](../../releases) (match the variant you flashed) onto your phone/laptop, then upload via the web UI.
 
 Either path keeps the previous apkovl as `.bak`. If a new apkovl fails to boot to the "ready" state 3 times in a row, an early-boot service automatically restores the backup.
 
@@ -173,7 +173,7 @@ The image enables `enable_uart=1` so a USB-TTL adapter on GPIO 14 (TX) / 15 (RX)
 ./build.sh
 ```
 
-Requires Linux (loop devices + `mkfs.vfat`), plus: Docker, curl, parted, dosfstools, xz-utils. Runs sudo for `losetup`/`mount`. Output lands in `deploy/alphasound.img.xz`.
+Requires Linux (loop devices + `mkfs.vfat`), plus: Docker, curl, parted, dosfstools, xz-utils. Runs sudo for `losetup`/`mount`. Pass `VARIANT=home` (default, full feature set) or `VARIANT=car` (stripped for fastest boot — no display stack, no Python, no Roon). Output lands in `deploy/alphasound-${VARIANT}.img.xz`. CI runs both in sequence and publishes both on every release.
 
 `build.sh` is the single source of truth for image builds. The GitHub Actions release workflow (`.github/workflows/build.yml`) just installs the dependencies and runs `./build.sh` — so what you build locally matches what gets released. Don't add inline build logic to the workflow; put it in `build.sh`.
 
