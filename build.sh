@@ -153,10 +153,16 @@ REPOS
         # local.d scripts and our init.d services must be executable
         chmod +x /chroot/etc/local.d/*.start
         chmod +x /chroot/etc/init.d/alphasound-*
-        # /sbin/init: our pre-OpenRC wrapper, shipped via the overlay,
-        # replaces Alpine's openrc-init symlink. Must be executable or
-        # the kernel can't run it as PID 1.
-        chmod +x /chroot/sbin/init
+        # /sbin/init: force-install our pre-OpenRC wrapper. The overlay
+        # tar extraction *should* replace Alpine's openrc-init symlink
+        # with a regular file but GNU tar's behaviour with symlinks
+        # varies — install overwrites unconditionally. Kernel runs this
+        # as PID 1; it must exist as an executable regular file.
+        rm -f /chroot/sbin/init
+        install -m 0755 /overlay/sbin/init /chroot/sbin/init
+        echo '--- /sbin/init installed: ---'
+        ls -la /chroot/sbin/init
+        head -3 /chroot/sbin/init
 
         # Web UI scripts must be executable for lighttpd's mod_cgi to run them
         chmod +x /chroot/var/www/cgi-bin/*
@@ -221,23 +227,19 @@ SHAIRPORT_EOF
         echo '${ALPINE_RELEASE}' > /chroot/etc/alphasound-alpine-version
         date -u '+%Y-%m-%d %H:%M:%S' > /chroot/etc/alphasound-build-time
 
-        # Back-date OpenRC's dependency-graph inputs to epoch 0
-        # (1970-01-01 00:00:00). The Pi has no RTC, so system clock
-        # starts at epoch 0 + seconds-since-kernel-up; anything with
-        # mtime > current boot-time reads as 'file from the future'
-        # and triggers 'clock skew detected' + deptree regen. Epoch 0
-        # is the only value guaranteed to be <= every possible
-        # boot-time clock reading.
+        # Back-date everything in the chroot to epoch 0 so OpenRC's
+        # mtime-based dependency-graph checks don't flag files as
+        # 'from the future' on a Pi with no RTC.
         #
-        # Broad-brush /etc and /lib because OpenRC checks at least
-        # /etc/init.d/*.sh (functions.sh in particular), /etc/conf.d,
-        # /etc/runlevels, /etc/rc.conf, and various scripts under
-        # /lib/rc — and the exact set varies by OpenRC version, so
-        # rather than chase specific paths we cover the whole tree.
-        # Regular files first, then symlinks (need -h; find handles
-        # them separately to avoid dereferencing).
-        find /chroot/etc /chroot/lib -type f -exec touch    -t 197001010000 {} + 2>/dev/null || true
-        find /chroot/etc /chroot/lib -type l -exec touch -h -t 197001010000 {} + 2>/dev/null || true
+        # OpenRC's functions.sh lives under /usr/libexec/rc/sh/ on
+        # current Alpine (symlinked from /etc/init.d/), and other
+        # scripts it sources live scattered under /usr and /lib. The
+        # exact set varies by version — easier to back-date the whole
+        # chroot than to chase specific paths as the package layout
+        # moves around. Regular files first, then symlinks (need -h
+        # to operate on the link itself, not its target).
+        find /chroot -xdev -type f -exec touch    -t 197001010000 {} + 2>/dev/null || true
+        find /chroot -xdev -type l -exec touch -h -t 197001010000 {} + 2>/dev/null || true
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true
