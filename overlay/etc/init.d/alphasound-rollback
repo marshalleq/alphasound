@@ -28,7 +28,11 @@ depend() {
 }
 
 start() {
-    [ ! -f "$PENDING" ] && return 0
+    /usr/local/bin/alphasound-checkpoint rollback-start
+    if [ ! -f "$PENDING" ]; then
+        /usr/local/bin/alphasound-checkpoint rollback-done
+        return 0
+    fi
 
     mount -o remount,rw "$BOOT"
 
@@ -58,4 +62,5 @@ start() {
 
     sync
     mount -o remount,ro "$BOOT" 2>/dev/null || true
+    /usr/local/bin/alphasound-checkpoint rollback-done
 }
