@@ -1,11 +1,15 @@
 #!/bin/sh
 # Accept a raw apkovl tarball POST'd to stdin, validate, swap, reboot.
 #
-# Under lighttpd the whole request body is already buffered by the
-# server by the time the CGI starts — we just read CONTENT_LENGTH
-# bytes from stdin and process normally. No heartbeats, no chunking,
-# no response-before-body games needed (those were workarounds for
-# busybox httpd's quirks, which we're no longer using).
+# We stream the body straight onto the SD card's boot partition rather
+# than via tmpfs: the root tmpfs on a Pi Zero 2 W is ~200 MB and already
+# ~90% full with the extracted apkovl, so a 60 MB upload through /tmp
+# would fill it. The SD has gigabytes free, and since the file has to
+# end up there anyway (alphasound.apkovl.tar.gz), writing directly
+# saves a round-trip.
+#
+# Combined with lighttpd's server.stream-request-body = 1, no large
+# buffer exists anywhere along the request path.
 
 . /etc/alphasound/session.sh
 . /etc/alphasound/reply.sh
@@ -16,39 +20,48 @@ set -e
 BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
-TMP=/tmp/alphasound.upload.$$
+NEW=$BOOT/alphasound.apkovl.tar.gz.new
 
-trap 'rm -f "$TMP"' EXIT
+REMOUNT_RW=0
+cleanup() {
+    rm -f "$NEW" 2>/dev/null
+    [ "$REMOUNT_RW" = 1 ] && mount -o remount,ro "$BOOT" 2>/dev/null
+    return 0
+}
+trap cleanup EXIT
 
 [ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "POST a tarball as the request body"
 [ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || reply "411 Length Required" "missing or empty body"
 
-head -c "$CONTENT_LENGTH" > "$TMP"
+mount -o remount,rw "$BOOT"
+REMOUNT_RW=1
+
+head -c "$CONTENT_LENGTH" > "$NEW"
 
 # Accept either a gzipped tar or a bare tar; re-gzip the bare case so
 # the boot-time apkovl reader (which only knows .tar.gz) is happy.
-if tar -tzf "$TMP" >/dev/null 2>&1; then
+if tar -tzf "$NEW" >/dev/null 2>&1; then
     :
-elif tar -tf "$TMP" >/dev/null 2>&1; then
-    gzip -c "$TMP" > "$TMP.gz" 2>/dev/null \
+elif tar -tf "$NEW" >/dev/null 2>&1; then
+    gzip -c "$NEW" > "$NEW.gz" 2>/dev/null \
         || reply "500 Internal Server Error" "re-gzip failed"
-    mv "$TMP.gz" "$TMP"
+    mv "$NEW.gz" "$NEW"
 else
     reply "400 Bad Request" "uploaded file is not a valid tar or tar.gz"
 fi
 
 . /etc/alphasound/apkovl-check.sh
-check_apkovl_compat "$TMP"
+check_apkovl_compat "$NEW"
 
-mount -o remount,rw "$BOOT"
 mv "$APKOVL" "$BAK" 2>/dev/null || true
-mv "$TMP" "$APKOVL"
+mv "$NEW" "$APKOVL"
 touch "$BOOT/.boot_pending"
 rm -f "$BOOT/.boot_count"
 sync
 mount -o remount,ro "$BOOT" 2>/dev/null || true
 
-# TMP has been moved; disable the cleanup trap.
+# Swap + remount done; cleanup trap is no longer needed.
+REMOUNT_RW=0
 trap - EXIT
 
 reply_and_reboot "update applied — rebooting. Reconnect to the AP in ~30s."

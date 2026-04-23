@@ -12,9 +12,18 @@ set -e
 BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
-TMP=/tmp/alphasound.pull.$$
+# Download directly to the SD card; the root tmpfs is too small to
+# buffer a ~60 MB apkovl and this is where the file needs to end up
+# anyway (see upload CGI header for the longer version).
+NEW=$BOOT/alphasound.apkovl.tar.gz.new
 
-trap 'rm -f "$TMP"' EXIT
+REMOUNT_RW=0
+cleanup() {
+    rm -f "$NEW" 2>/dev/null
+    [ "$REMOUNT_RW" = 1 ] && mount -o remount,ro "$BOOT" 2>/dev/null
+    return 0
+}
+trap cleanup EXIT
 
 [ "$REQUEST_METHOD" = "POST" ] || reply "405 Method Not Allowed" "use POST"
 
@@ -30,23 +39,26 @@ case "$URL" in
     *) reply "400 Bad Request" "URL must be a GitHub release asset" ;;
 esac
 
-wget -q -T 120 -O "$TMP" "$URL" \
+mount -o remount,rw "$BOOT"
+REMOUNT_RW=1
+
+wget -q -T 120 -O "$NEW" "$URL" \
     || reply "502 Bad Gateway" "download failed (no internet? URL wrong?)"
 
-tar -tzf "$TMP" >/dev/null 2>&1 \
+tar -tzf "$NEW" >/dev/null 2>&1 \
     || reply "400 Bad Request" "downloaded file is not a valid tar.gz"
 
 . /etc/alphasound/apkovl-check.sh
-check_apkovl_compat "$TMP"
+check_apkovl_compat "$NEW"
 
-mount -o remount,rw "$BOOT"
 mv "$APKOVL" "$BAK" 2>/dev/null || true
-mv "$TMP" "$APKOVL"
+mv "$NEW" "$APKOVL"
 touch "$BOOT/.boot_pending"
 rm -f "$BOOT/.boot_count"
 sync
 mount -o remount,ro "$BOOT" 2>/dev/null || true
 
+REMOUNT_RW=0
 trap - EXIT
 
 reply_and_reboot "downloaded and applied — rebooting. Reconnect in ~30s."
