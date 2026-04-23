@@ -477,11 +477,14 @@ $('upload').onclick = async () => {
   log(`uploading ${totalMB} MB in ${Math.ceil(total / CHUNK)} chunks…`);
   const started = Date.now();
   try {
+    const totalChunks = Math.ceil(total / CHUNK);
     for (let off = 0; off < total; off += CHUNK) {
       const end = Math.min(off + CHUNK, total);
+      const n = Math.floor(off / CHUNK) + 1;
       const slice = f.slice(off, end);
       let lastErr;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        log(`sending chunk ${n}/${totalChunks} (offset ${(off / 1024 / 1024).toFixed(1)} MB)${attempt > 1 ? `, attempt ${attempt}` : ''}…`);
         try {
           const r = await fetch(
             `/cgi-bin/upload-chunk?offset=${off}&total=${total}`,
@@ -496,7 +499,7 @@ $('upload').onclick = async () => {
           lastErr = e;
           if (attempt === MAX_ATTEMPTS) break;
           const delay = attempt * 1000;
-          log(`chunk at ${(off / 1024 / 1024).toFixed(1)} MB failed (${e.message}); retry ${attempt}/${MAX_ATTEMPTS - 1} in ${delay}ms`);
+          log(`chunk ${n} failed (${e.message}); retry in ${delay}ms`);
           await new Promise(r => setTimeout(r, delay));
         }
       }
