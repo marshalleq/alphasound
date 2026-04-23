@@ -19,28 +19,19 @@ depend() {
 }
 
 start() {
-    [ -f /etc/alphasound-version ] || return 0
-    ts=$(stat -c %Y /etc/alphasound-version 2>/dev/null)
-    [ -n "$ts" ] && [ "$ts" -gt 0 ] || return 0
+    # /etc/alphasound-build-time is written at apkovl build time with a
+    # plain ISO-format UTC timestamp ("YYYY-MM-DD HH:MM:SS"), which is
+    # a form every busybox `date -s` accepts. We read the *contents*
+    # rather than the file's mtime because mtimes across the rootfs
+    # are intentionally backdated to epoch 0 at build time to silence
+    # OpenRC's 'clock skew detected' warnings — so file mtimes can't
+    # be trusted as a time source here.
+    [ -f /etc/alphasound-build-time ] || return 0
+    fmt=$(cat /etc/alphasound-build-time 2>/dev/null)
+    [ -n "$fmt" ] || return 0
 
-    ebegin "seeding clock from build time (unix: $ts)"
+    ebegin "seeding clock from build time ($fmt)"
     /usr/local/bin/alphasound-checkpoint clock-set
-
-    # Cascade through formats busybox may or may not accept:
-    #   1. `-s @unixtime`   GNU form, present in recent busybox
-    #   2. `-d @ts +FMT`    conversion helper then busybox-friendly set
-    #   3. `awk strftime`   if awk was compiled with GNU extensions
-    # Skip python3 on purpose — spawning it at sysinit adds ~1 s.
-    if date -s "@$ts" >/dev/null 2>&1; then
-        eend 0; return 0
-    fi
-    fmt=$(date -d "@$ts" +'%Y-%m-%d %H:%M:%S' 2>/dev/null)
-    if [ -n "$fmt" ] && date -s "$fmt" >/dev/null 2>&1; then
-        eend 0; return 0
-    fi
-    fmt=$(awk -v t="$ts" 'BEGIN { print strftime("%Y-%m-%d %H:%M:%S", t) }' 2>/dev/null)
-    if [ -n "$fmt" ] && date -s "$fmt" >/dev/null 2>&1; then
-        eend 0; return 0
-    fi
-    eend 1
+    date -s "$fmt" >/dev/null 2>&1
+    eend $?
 }

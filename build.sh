@@ -225,8 +225,13 @@ SHAIRPORT_EOF
         # apkovls built against an incompatible Alpine major version
         # (the modloop from the .img.xz must match — we can't ship new
         # kernel modules in an apkovl).
+        # alphasound-build-time is consumed by alphasound-clock to seed
+        # the system clock on a Pi with no RTC — we read its contents
+        # rather than its mtime so we can safely backdate everything
+        # else to epoch 0 without losing this reference.
         echo '${VERSION}' > /chroot/etc/alphasound-version
         echo '${ALPINE_RELEASE}' > /chroot/etc/alphasound-alpine-version
+        date -u '+%Y-%m-%d %H:%M:%S' > /chroot/etc/alphasound-build-time
 
         # Back-date OpenRC's dependency-graph inputs to epoch 0
         # (1970-01-01 00:00:00). The Pi has no RTC, so system clock
@@ -234,11 +239,17 @@ SHAIRPORT_EOF
         # mtime > current boot-time reads as 'file from the future'
         # and triggers 'clock skew detected' + deptree regen. Epoch 0
         # is the only value guaranteed to be <= every possible
-        # boot-time clock reading. Touch symlinks with -h so runlevels/
-        # entries aren't silently dereferenced.
-        find /chroot/etc/init.d /chroot/etc/conf.d /chroot/lib/rc -exec touch -t 197001010000 {} + 2>/dev/null || true
-        find /chroot/etc/runlevels -exec touch -h -t 197001010000 {} + 2>/dev/null || true
-        touch -t 197001010000 /chroot/etc/rc.conf /chroot/etc/inittab 2>/dev/null || true
+        # boot-time clock reading.
+        #
+        # Broad-brush /etc and /lib because OpenRC checks at least
+        # /etc/init.d/*.sh (functions.sh in particular), /etc/conf.d,
+        # /etc/runlevels, /etc/rc.conf, and various scripts under
+        # /lib/rc — and the exact set varies by OpenRC version, so
+        # rather than chase specific paths we cover the whole tree.
+        # Regular files first, then symlinks (need -h; find handles
+        # them separately to avoid dereferencing).
+        find /chroot/etc /chroot/lib -type f -exec touch    -t 197001010000 {} + 2>/dev/null || true
+        find /chroot/etc /chroot/lib -type l -exec touch -h -t 197001010000 {} + 2>/dev/null || true
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true
