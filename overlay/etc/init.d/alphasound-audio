@@ -1,0 +1,88 @@
+#!/sbin/openrc-run
+# Write /etc/shairport-sync.conf BEFORE shairport-sync starts.
+#
+# Previously alphasound.start wrote the config late (in the default
+# runlevel, after shairport-sync had already started with the apkovl's
+# baked default) and then did a `rc-service shairport-sync restart`.
+# That restart cost ~1-1.5 s of boot time. Writing the config here in
+# the boot runlevel — after `modules` has loaded the ALSA driver so
+# /proc/asound/cards is populated, but before shairport-sync's init.d
+# service runs in the default runlevel — lets shairport-sync come up
+# with the right config on the first try.
+
+description="Generate shairport-sync config from alphasound.txt"
+
+CONFIG=/media/mmcblk0p1/alphasound.txt
+
+depend() {
+    need localmount
+    after modules
+    before shairport-sync
+}
+
+resolve_bcm2835_hdmi() {
+    n=$(awk '/^ *[0-9]+ \[/ && /bcm2835/ { gsub(/[[:space:]]/, "", $1); print $1; exit }' /proc/asound/cards 2>/dev/null)
+    echo "hw:${n:-0},1"
+}
+
+start() {
+    /usr/local/bin/alphasound-checkpoint audio-config-start
+
+    local name="Alphasound"
+    local volmax="-3.00"
+    local output="auto"
+
+    if [ -f "$CONFIG" ]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                ALPHASOUND_NAME)          name=$value ;;
+                ALPHASOUND_VOLUME_MAX_DB) volmax=$value ;;
+                ALPHASOUND_OUTPUT_DEVICE) output=$value ;;
+            esac
+        done < "$CONFIG"
+    fi
+
+    # Resolve symbolic output values (auto / hdmi) to a concrete
+    # hw:N,D ALSA device. Same logic as alphasound.start's original
+    # resolution, kept here rather than shared in a sourced file
+    # because the inputs are trivially small.
+    case "$output" in
+        auto)
+            PICK_LINE=$(awk '/^ *[0-9]+ \[/ && !/Headphones/ && !/bcm2835/ && !/BCM2835/ { line=$0 } END{ print line }' /proc/asound/cards 2>/dev/null)
+            if [ -n "$PICK_LINE" ]; then
+                CARD_NUM=$(echo "$PICK_LINE" | awk '{ sub(/ /, "", $1); print $1 }')
+                output="hw:$CARD_NUM"
+            else
+                output=$(resolve_bcm2835_hdmi)
+            fi
+            ;;
+        hdmi)
+            output=$(resolve_bcm2835_hdmi)
+            ;;
+    esac
+
+    ebegin "Writing shairport-sync config (output=$output)"
+    cat > /etc/shairport-sync.conf << EOF
+general =
+{
+    name = "$name";
+    ignore_volume_control = "yes";
+    volume_max_db = $volmax;
+};
+
+alsa =
+{
+    output_device = "$output";
+};
+
+metadata =
+{
+    enabled = "yes";
+    include_cover_art = "yes";
+    pipe_name = "/tmp/shairport-sync-metadata";
+    pipe_timeout = 5000;
+};
+EOF
+    eend 0
+    /usr/local/bin/alphasound-checkpoint audio-config-done
+}
