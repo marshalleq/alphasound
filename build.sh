@@ -35,7 +35,7 @@ PACKAGES="alpine-base shairport-sync hostapd dnsmasq avahi avahi-tools openssh \
 # replaces /etc/runlevels wholesale, so if we don't list these here, they
 # won't be enabled.
 SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop"
-BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features"
+BOOT_SVCS="bootmisc hostname hwclock modules sysctl syslog alphasound-rollback alphasound-persist alphasound-features alphasound-splash"
 DEFAULT_SVCS="networking shairport-sync avahi-daemon bluetooth bluealsa local sshd"
 SHUTDOWN_SVCS="killprocs mount-ro savecache"
 
@@ -80,11 +80,17 @@ mkdir -p "${CHROOT_DIR}"
 docker run --rm \
     -v "${CHROOT_DIR}:/chroot" \
     -v "${SCRIPT_DIR}/overlay:/overlay:ro" \
+    -v "${SCRIPT_DIR}/splash:/splash:ro" \
     "alpine:${ALPINE_VERSION}" \
     sh -ec "
         echo 'https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main' > /etc/apk/repositories
         echo 'https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community' >> /etc/apk/repositories
         apk update
+        # Host-container tooling: C compiler (+ Linux UAPI headers for
+        # spidev.h) for the boot splash, plus Python+PIL+Noto to
+        # pre-render its splash image. These don't land in the chroot
+        # — they stay in the ephemeral build image.
+        apk add --no-cache gcc musl-dev linux-headers python3 py3-pillow font-noto
 
         # apk --root reads /chroot/etc/apk/{repositories,keys}, NOT the
         # host's. So we initialise those in the chroot BEFORE installing.
@@ -146,6 +152,13 @@ REPOS
 
         # Web UI scripts must be executable for httpd to invoke them
         chmod +x /chroot/var/www/cgi-bin/*
+
+        # Boot splash: compile the C binary and pre-render its image.
+        # Binary lands in /usr/local/bin, image bytes in /usr/share.
+        echo '--- building alphasound-splash ---'
+        mkdir -p /chroot/usr/local/bin /chroot/usr/share/alphasound-splash
+        gcc -O2 -Wall -o /chroot/usr/local/bin/alphasound-splash /splash/alphasound-splash.c
+        python3 /splash/gen-splash.py /chroot/usr/share/alphasound-splash/splash.raw
 
         # busybox-extras puts its binary at /bin/busybox-extras and creates
         # symlinks like /usr/sbin/httpd -> /bin/busybox-extras. We don't
