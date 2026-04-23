@@ -119,41 +119,9 @@ case "$ALPHASOUND_OUTPUT_DEVICE" in
         ;;
 esac
 
-# Regenerate shairport-sync.conf if it's stale relative to the config.
-# Returns 0 when the file was actually changed (caller should restart);
-# returns 1 when the existing file matches what we'd write (skip the
-# restart, save ~1s). At build time we bake in a default-values version
-# of this file, so a vanilla alphasound.txt produces a no-op here.
-write_shairport_config() {
-    local tmp=/tmp/shairport-sync.conf.new
-    cat > "$tmp" << EOF
-general =
-{
-    name = "$ALPHASOUND_NAME";
-    ignore_volume_control = "yes";
-    volume_max_db = $ALPHASOUND_VOLUME_MAX_DB;
-};
-
-alsa =
-{
-    output_device = "$ALPHASOUND_OUTPUT_DEVICE";
-};
-
-metadata =
-{
-    enabled = "yes";
-    include_cover_art = "yes";
-    pipe_name = "/tmp/shairport-sync-metadata";
-    pipe_timeout = 5000;
-};
-EOF
-    if cmp -s "$tmp" /etc/shairport-sync.conf 2>/dev/null; then
-        rm -f "$tmp"
-        return 1
-    fi
-    mv "$tmp" /etc/shairport-sync.conf
-    return 0
-}
+# shairport-sync.conf is written earlier by the alphasound-audio service
+# in the boot runlevel (before shairport-sync itself starts), so there's
+# no config generation here and no need to restart the daemon.
 
 start_ap_mode() {
     log "starting AP mode"
@@ -288,15 +256,12 @@ if [ "$EFFECTIVE_MODE" = "RUN" ]; then
 fi
 checkpoint network-ready
 
-if write_shairport_config; then
-    log "shairport-sync config changed — restarting"
-    timeout 10 rc-service shairport-sync restart \
-        || log "shairport-sync restart failed/timed out"
-else
-    log "shairport-sync config unchanged — skipping restart"
-    rc-service shairport-sync status >/dev/null 2>&1 \
-        || rc-service shairport-sync start
-fi
+# shairport-sync was already started in the default runlevel with the
+# config written by alphasound-audio during boot runlevel. Just make
+# sure it's running (in case its init.d start failed for some reason)
+# and record the checkpoint.
+rc-service shairport-sync status >/dev/null 2>&1 \
+    || rc-service shairport-sync start
 checkpoint audio-ready
 
 start_bluetooth_setup
