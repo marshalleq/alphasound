@@ -1,25 +1,23 @@
 #!/bin/sh
 # Accept a raw apkovl tarball POST'd to stdin, validate, swap, reboot.
 #
-# Several interventions needed to survive busybox httpd's behaviour on
-# large uploads:
-#   1. Commit to 200 OK and start streaming the response BEFORE
-#      consuming the request body. busybox kills CGIs that go silent
-#      on stdout for too long, and reading 60 MB over WiFi easily
-#      exceeds that window.
+# Ordering is critical for busybox httpd behaviour on large uploads:
+#   1. Emit "Status: 200 OK" + a bit of body text IMMEDIATELY. busybox
+#      kills CGIs that go silent on stdout for too long.
 #   2. Emit a stdout heartbeat ("." every few seconds) while the body
-#      streams in, so the CGI-read timer never lapses regardless of
-#      how slow the client's WiFi is.
-#   3. Stream the body directly to the final SD location (.new), not
-#      tmpfs + cross-filesystem mv — avoids copying 60 MB twice.
-#   4. Fork the sync + reboot into a subshell detached from httpd's
-#      stdio so the parent exits cleanly and httpd flushes the
-#      response to the client without waiting.
+#      streams in so the CGI-read timer never lapses.
+#   3. DRAIN THE BODY to tmpfs BEFORE any fallible work. If we exit
+#      mid-upload (e.g. a remount failure), busybox closes the socket
+#      with request bytes still in flight and the browser sees a
+#      "load failed" network error instead of our response.
+#   4. Only once the body is fully drained do we validate, and the
+#      SD swap + sync + reboot run in a subshell detached from httpd's
+#      stdio so the parent can exit and httpd flushes the response.
 #
-# Trade-off: we commit to 200 OK before validating, so a malformed
-# upload produces "200 OK with ERROR text in body" rather than a 400
-# status. Acceptable — the auto-rollback safety net on SD catches
-# apkovls that install but then fail to boot 3 times.
+# Trade-off: 200 OK is committed before validation, so bad uploads
+# produce "200 OK with ERROR text in body" rather than a 400 status.
+# Auto-rollback on SD catches apkovls that manage to install but fail
+# to boot 3 times.
 
 . /etc/alphasound/session.sh
 require_session
@@ -29,14 +27,12 @@ set -e
 BOOT=/media/mmcblk0p1
 APKOVL=$BOOT/alphasound.apkovl.tar.gz
 BAK=$BOOT/alphasound.apkovl.tar.gz.bak
-NEW=$BOOT/alphasound.apkovl.tar.gz.new
-
-REMOUNT_RW=0
+TMP=/tmp/alphasound.upload.$$
 HEARTBEAT=""
+
 cleanup() {
     [ -n "$HEARTBEAT" ] && kill "$HEARTBEAT" 2>/dev/null
-    rm -f "$NEW" 2>/dev/null
-    [ "$REMOUNT_RW" = 1 ] && mount -o remount,ro "$BOOT" 2>/dev/null
+    rm -f "$TMP" 2>/dev/null
     return 0
 }
 trap cleanup EXIT
@@ -49,37 +45,42 @@ early_reply() {
 [ "$REQUEST_METHOD" = "POST" ] || early_reply "405 Method Not Allowed" "POST a tarball as the request body"
 [ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] || early_reply "411 Length Required" "missing or empty body"
 
-# ---- commit to 200 OK, start response, kick off heartbeat ----------
+# ---- commit to 200 OK + start heartbeat ---------------------------
 printf 'Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n'
 printf 'receiving %s bytes ' "$CONTENT_LENGTH"
 
 (while sleep 4; do printf '.\n'; done) &
 HEARTBEAT=$!
 
-# ---- remount boot rw and stream body straight to SD ---------------
-mount -o remount,rw "$BOOT"
-REMOUNT_RW=1
-
+# ---- drain body to tmpfs FIRST ------------------------------------
+# Everything here MUST complete so busybox httpd can close the socket
+# with the client-side send finished. Any error later is reported in
+# the response body text, not by breaking the transport.
 set +e
-head -c "$CONTENT_LENGTH" > "$NEW"
-rc=$?
+head -c "$CONTENT_LENGTH" > "$TMP"
+body_rc=$?
 set -e
-if [ "$rc" -ne 0 ]; then
+
+kill "$HEARTBEAT" 2>/dev/null
+wait "$HEARTBEAT" 2>/dev/null
+HEARTBEAT=""
+
+if [ "$body_rc" -ne 0 ]; then
     printf '\nERROR: upload interrupted\n'
     exit 1
 fi
 
 printf ' ok\n'
 
-# ---- validate: must be a gzipped tar, or a bare tar we can re-gzip -
-if tar -tzf "$NEW" >/dev/null 2>&1; then
+# ---- validate (body already drained; failures won't break client) -
+if tar -tzf "$TMP" >/dev/null 2>&1; then
     :
-elif tar -tf "$NEW" >/dev/null 2>&1; then
+elif tar -tf "$TMP" >/dev/null 2>&1; then
     printf 'gzipping (client pre-extracted the wrapper)... '
-    if gzip -c "$NEW" > "$NEW.gz" 2>/dev/null && mv "$NEW.gz" "$NEW"; then
+    if gzip -c "$TMP" > "$TMP.gz" 2>/dev/null && mv "$TMP.gz" "$TMP"; then
         printf 'ok\n'
     else
-        printf 'failed\n'
+        printf 'FAILED\n'
         exit 1
     fi
 else
@@ -87,32 +88,24 @@ else
     exit 1
 fi
 
-# Major-version compat. Subshell isolates apkovl-check.sh's `exit` call
-# so it can't abort our flow or inject its own Status header over ours.
-if ! ( . /etc/alphasound/apkovl-check.sh; check_apkovl_compat "$NEW" >/dev/null 2>&1 ); then
+if ! ( . /etc/alphasound/apkovl-check.sh; check_apkovl_compat "$TMP" >/dev/null 2>&1 ); then
     printf 'ERROR: apkovl Alpine major version mismatch (see /var/log/messages)\n'
     logger -t alphasound-upload "apkovl compat check failed" 2>/dev/null || true
     exit 1
 fi
 
-# ---- swap (same-filesystem rename, instant), stop heartbeat -------
-mv "$APKOVL" "$BAK" 2>/dev/null || true
-mv "$NEW" "$APKOVL"
-touch "$BOOT/.boot_pending"
-rm -f "$BOOT/.boot_count"
+printf 'swapping apkovl and rebooting. reconnect to the AP in ~30s.\n'
 
-kill "$HEARTBEAT" 2>/dev/null
-wait "$HEARTBEAT" 2>/dev/null
-HEARTBEAT=""
-
-printf 'installed — rebooting, reconnect to the AP in ~30s\n'
-
-# Background subshell owns the SD remount now.
-REMOUNT_RW=0
+# Background subshell owns TMP now — cancel the cleanup trap.
 trap - EXIT
 
 (
     exec >/dev/null 2>&1 </dev/null
+    mount -o remount,rw "$BOOT"
+    mv "$APKOVL" "$BAK" 2>/dev/null || true
+    mv "$TMP" "$APKOVL"
+    touch "$BOOT/.boot_pending"
+    rm -f "$BOOT/.boot_count"
     sync
     mount -o remount,ro "$BOOT" 2>/dev/null || true
     reboot
