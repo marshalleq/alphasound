@@ -223,15 +223,17 @@ SHAIRPORT_EOF
         echo '${VERSION}' > /chroot/etc/alphasound-version
         echo '${ALPINE_RELEASE}' > /chroot/etc/alphasound-alpine-version
 
-        # Back-date OpenRC's dependency-graph inputs so they look OLDER
-        # than the Pi's boot-time system clock (epoch 1970, no RTC).
-        # Without this, OpenRC on every boot sees every init-script as
-        # \"from the future\", logs 'clock skew detected', and rebuilds
-        # its deptree. We touch symlinks with -h so runlevels/ entries
-        # aren't silently dereferenced.
-        find /chroot/etc/init.d /chroot/etc/conf.d -exec touch -t 197001020000 {} + 2>/dev/null || true
-        find /chroot/etc/runlevels -exec touch -h -t 197001020000 {} + 2>/dev/null || true
-        touch -t 197001020000 /chroot/etc/rc.conf /chroot/etc/inittab 2>/dev/null || true
+        # Back-date OpenRC's dependency-graph inputs to epoch 0
+        # (1970-01-01 00:00:00). The Pi has no RTC, so system clock
+        # starts at epoch 0 + seconds-since-kernel-up; anything with
+        # mtime > current boot-time reads as 'file from the future'
+        # and triggers 'clock skew detected' + deptree regen. Epoch 0
+        # is the only value guaranteed to be <= every possible
+        # boot-time clock reading. Touch symlinks with -h so runlevels/
+        # entries aren't silently dereferenced.
+        find /chroot/etc/init.d /chroot/etc/conf.d /chroot/lib/rc -exec touch -t 197001010000 {} + 2>/dev/null || true
+        find /chroot/etc/runlevels -exec touch -h -t 197001010000 {} + 2>/dev/null || true
+        touch -t 197001010000 /chroot/etc/rc.conf /chroot/etc/inittab 2>/dev/null || true
 
         # Drop apk's download cache and other cruft to keep the apkovl small
         rm -rf /chroot/var/cache/apk/* /chroot/tmp/* 2>/dev/null || true
