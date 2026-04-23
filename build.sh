@@ -268,8 +268,12 @@ echo "Calculating image size..."
 mkdir -p "${WORK_DIR}/alpine-extract"
 tar xzf "${WORK_DIR}/${ALPINE_TARBALL}" -C "${WORK_DIR}/alpine-extract"
 TARBALL_SIZE=$(du -sb "${WORK_DIR}/alpine-extract" | cut -f1)
-# 64 MB headroom for FAT32 overhead and breathing room.
-IMG_SIZE_MB=$(( (TARBALL_SIZE + APKOVL_SIZE + 64*1024*1024) / 1024 / 1024 + 1 ))
+# Headroom sized to fit an in-flight apkovl update in the worst case:
+# the existing .tar.gz (~60 MB) + the previous .bak (~60 MB, kept for
+# auto-rollback) + an incoming .new (~60 MB gzipped or up to ~180 MB
+# if the user's OS auto-extracted the .gz wrapper before upload) +
+# ~30 MB of FAT32 overhead and breathing room. 384 MB covers it.
+IMG_SIZE_MB=$(( (TARBALL_SIZE + APKOVL_SIZE + 384*1024*1024) / 1024 / 1024 + 1 ))
 echo "Image size: ${IMG_SIZE_MB}MB"
 
 # --- Create blank image with FAT32 partition ---
