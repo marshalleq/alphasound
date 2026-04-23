@@ -21,5 +21,7 @@ start() {
     [ "$display" = "pirate-audio" ] || return 0
     ebegin "painting boot splash"
     "$BINARY"
-    eend $?
+    rc=$?
+    /usr/local/bin/alphasound-checkpoint splash-painted
+    eend $rc
 }

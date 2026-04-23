@@ -156,6 +156,11 @@ REPOS
         # Web UI scripts must be executable for httpd to invoke them
         chmod +x /chroot/var/www/cgi-bin/*
 
+        # Ensure everything under /usr/local/bin/ is runnable (shipped
+        # executables like alphasound-display.py and the checkpoint
+        # helper called from init scripts).
+        chmod +x /chroot/usr/local/bin/* 2>/dev/null || true
+
         # Boot splash: compile the C binary and pre-render its image.
         # Binary lands in /usr/local/bin, image bytes in /usr/share.
         echo '--- building alphasound-splash ---'
