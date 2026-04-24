@@ -2,25 +2,37 @@
 
 A tiny, drop-in Raspberry Pi image that turns any Pi into a wireless audio receiver — AirPlay + Bluetooth, with or without a screen, on any audio hardware you've got. Built on [Alpine Linux](https://alpinelinux.org/), [shairport-sync](https://github.com/mikebrady/shairport-sync), and [BlueALSA](https://github.com/Arkq/bluez-alsa).
 
-One image, two very different installs — both supported by the same config, switchable from the web UI:
+**Two image variants, same config surface** — pick the one that matches how you'll install it:
 
-### Head-unit mode (home / desk)
+### `alphasound-home.img.xz` — head-unit mode (home / desk)
 
-Plug it into your HDMI TV or monitor, pick a DAC HAT (or don't — USB DAC / HDMI audio / onboard are all fine), and you get a full-screen now-playing UI with album art, artist, and track progress. Use it like a cheap Ropieee replacement on a monitor next to your stereo. **HDMI-CEC is active whenever `display=hdmi`** — press Play / Pause / Skip / Volume on the TV remote and it's relayed back to the streaming phone via DACP, so the person streaming gets actual Apple-remote behaviour without touching their device.
+Plug it into your HDMI TV or monitor, pick a DAC HAT (or don't — USB DAC / HDMI audio / onboard are all fine), and you get a full-screen now-playing UI with album art, artist, and track progress. Use it like a cheap Ropieee replacement on a monitor next to your stereo. **HDMI-CEC is active whenever `display=hdmi`** — press Play / Pause / Skip / Volume on the TV remote and it's relayed back to the streaming phone via DACP, so the person streaming gets actual Apple-remote behaviour without touching their device. Ships with the display stack (Python + PIL + libgpiod), HDMI-CEC, Roon Bridge prerequisites, the PWM brightness control, and the boot splash.
 
-### Behind-the-dash mode (car / invisible install)
+### `alphasound-car.img.xz` — behind-the-dash mode (car / invisible install)
 
-No screen, no buttons, no monitor — just a DAC HAT wired straight to your car's speakers or line-in, boot time minimised, whole device hidden in the console. Especially good for **old cars with factory stereos you don't want to cut up**: the car keeps its original face and switches, but a HiFiBerry Amp2 / Pirate Audio Speakers / similar amplifier HAT *drives the speakers directly* and your phone streams AirPlay over the device's own WiFi. Your factory radio becomes optional — mechanical backup only.
+No screen, no buttons, no monitor — just a DAC HAT wired straight to your car's speakers or line-in, boot time minimised, whole device hidden in the console. Especially good for **old cars with factory stereos you don't want to cut up**: the car keeps its original face and switches, but a HiFiBerry Amp2 / Pirate Audio Speakers / similar amplifier HAT *drives the speakers directly* and your phone streams AirPlay over the device's own WiFi. Your factory radio becomes optional — mechanical backup only. The `car` image strips out the display stack, HDMI-CEC, Roon, and the boot splash so the apkovl extracts faster and the Pi gets to the "ready to AirPlay" state as quickly as possible.
 
-The DAC, the display, and the output routing are all **independent toggles** — so "DAC HAT with no screen" and "no HAT, just HDMI output" and "everything at once" are all first-class combinations.
+### Which one do I want?
+
+| You want… | Pick |
+|---|---|
+| Album-art display on HDMI / Pirate Audio / Adafruit PiTFT | **home** |
+| TV remote controlling the phone via HDMI-CEC | **home** |
+| Roon Bridge endpoint | **home** |
+| Fastest possible cold-boot on a Pi Zero 2 W, speakers only | **car** |
+| Behind-the-dash retrofit with factory stereo bypassed | **car** |
+| Desk / shelf install with DAC + amp but no screen | either works — `home` if you might plug a monitor in later, `car` for faster boot |
+
+The DAC, (home-only) display, and output routing are all **independent toggles** — so "DAC HAT with no screen" and "no HAT, just HDMI output" and "everything at once" are all first-class combinations on the `home` image.
 
 ## Highlights
 
-- **AirPlay + Bluetooth A2DP** in one device — Apple, Android, Linux, Windows clients all work
-- **Audio HAT dropdown** in the web UI — pick HiFiBerry / Pirate Audio / IQaudIO / Allo / Audio Injector / Google AIY and the overlay is written to `usercfg.txt` for you. Independent of the display choice.
-- **Amplifier HATs**: HiFiBerry Amp2 / Pirate Audio Stereo Speakers and similar HATs drive passive speakers directly — perfect for retrofitting an old car where you want to bypass the factory head unit entirely
-- **Optional display** — Pimoroni Pirate Audio (240×240 ST7789), Adafruit Mini PiTFT, or any HDMI monitor. Full-bleed album art with a dominant-colour gradient overlay, title / artist, live progress bar. PWM-dimmable backlight on Pirate Audio (slider in the web UI).
-- **Optional Roon Bridge endpoint** — one-tap install from the web UI when in client mode
+- **AirPlay + Bluetooth A2DP** in one device — Apple, Android, Linux, Windows clients all work. *Both variants.*
+- **Audio HAT dropdown** in the web UI — pick HiFiBerry / Pirate Audio / IQaudIO / Allo / Audio Injector / Google AIY and the overlay is written to `usercfg.txt` for you. Independent of the display choice. *Both variants.*
+- **Amplifier HATs**: HiFiBerry Amp2 / Pirate Audio Stereo Speakers and similar HATs drive passive speakers directly — perfect for retrofitting an old car where you want to bypass the factory head unit entirely. *Both variants.*
+- **Optional display** *(home variant only)* — Pimoroni Pirate Audio (240×240 ST7789), Adafruit Mini PiTFT, or any HDMI monitor. Full-bleed album art with a dominant-colour gradient overlay, title / artist, live progress bar. PWM-dimmable backlight on Pirate Audio (slider in the web UI).
+- **HDMI-CEC remote control** *(home variant only)* — TV remote relays to the streaming phone via DACP
+- **Optional Roon Bridge endpoint** *(home variant only)* — one-tap install from the web UI when in client mode
 - **Two network modes**, switchable from the web UI:
   - **Standalone** — broadcasts its own WPA2 WiFi (perfect for a car: phone connects, cellular still handles data)
   - **Client** — joins your home WiFi (useful at home for pulling updates, accessing SSH)
@@ -28,8 +40,8 @@ The DAC, the display, and the output routing are all **independent toggles** —
 - **In-place updates** with auto-rollback — never pull the SD card again. Apkovls are version-checked against the running modloop so you can't install a binary-incompatible build
 - **Toggle features off for faster boot** — disable Bluetooth, SSH, Roon, or the display from the web UI. Each unused subsystem off saves a few seconds; boot timer on the banner + web UI shows exactly what it buys you
 - **Runs entirely from RAM** (Alpine diskless) — survives hard power cuts (ignition off, breaker trip, kid yanks the plug). The SD card is read-only at runtime
-- Boots in seconds on a Pi Zero 2 W
-- ~100 MB compressed image
+- Boots in seconds on a Pi Zero 2 W — noticeably faster on the `car` variant (smaller apkovl → faster tmpfs extract at boot)
+- ~100 MB compressed image (`home`), smaller again for `car`
 
 ## Audio hardware
 
@@ -57,12 +69,12 @@ Pick your HAT in the web UI (Features → Audio HAT) — no more hand-editing `u
 
 ## Quick start
 
-1. Download the latest image from [Releases](../../releases)
-2. Flash to an SD card with [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+1. Download the right variant from [Releases](../../releases) — `alphasound-home.img.xz` for a display/CEC/Roon-capable install, `alphasound-car.img.xz` for the fastest-booting speakers-only install. If in doubt, start with `home`.
+2. Flash to an SD card with [Raspberry Pi Imager](https://www.raspberrypi.com/software/) (it handles `.xz` directly)
 3. Edit `alphasound.txt` on the SD card to set your WiFi name, country code, etc.
 4. Insert into Pi, power on (car ignition / desk USB)
 5. Connect to the `Alphasound` WiFi on your phone
-6. Open `http://10.0.10.1` → Features → pick your **Audio HAT** (if any) and **Display** (if any) → **Apply & reboot**
+6. Open `http://10.0.10.1` → Features → pick your **Audio HAT** (if any), and on `home` your **Display** (if any) → **Apply & reboot**
 7. Select `Alphasound` as an AirPlay output (Apple) or Bluetooth audio device (Android)
 
 ## Configuration
@@ -88,7 +100,7 @@ ALPHASOUND_ROOT_PASSWORD=alphasound
 
 The web UI Features section owns `ALPHASOUND_DAC`, `ALPHASOUND_DISPLAY`, `ALPHASOUND_OUTPUT_DEVICE`, `ALPHASOUND_DISPLAY_BRIGHTNESS`, plus the Bluetooth / SSH / Roon toggles — Apply & reboot regenerates `usercfg.txt`'s alphasound-managed block with the correct dtoverlays. Manual edits above that block are preserved.
 
-### Roon Bridge endpoint
+### Roon Bridge endpoint *(home variant only)*
 
 If you have a [Roon](https://roonlabs.com/) subscription and a Roon Core running on your home network, Alphasound can act as a Roon Bridge endpoint:
 
@@ -102,7 +114,7 @@ Notes:
 - Roon and AirPlay both grab the audio device exclusively, so only one will play at a time. If you only use Roon, disable AirPlay-related stuff in alphasound.txt to save boot time.
 - Roon Bridge needs internet for licensing checks and to find your Roon Core, so it only runs when the device is in client mode.
 
-### Display
+### Display *(home variant only)*
 
 The web UI's Features section has a Display dropdown. Pick one:
 
