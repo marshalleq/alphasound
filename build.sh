@@ -337,16 +337,26 @@ echo "Calculating image size..."
 mkdir -p "${WORK_DIR}/alpine-extract"
 tar xzf "${WORK_DIR}/${ALPINE_TARBALL}" -C "${WORK_DIR}/alpine-extract"
 TARBALL_SIZE=$(du -sb "${WORK_DIR}/alpine-extract" | cut -f1)
-# Flat 2 GB FAT32 partition. Alphasound runs entirely from a tmpfs
-# extracted from the apkovl at boot, so nothing about runtime depends
-# on how much disk we allocate — SD space is only needed for updates
-# (in-flight .new file + preserved .bak), persistent state (SSH host
-# keys, Bluetooth pairings, optional RoonBridge tarball), and future
-# headroom. xz compresses the unused partition space to almost nothing,
-# so a bigger image on disk is "free" in terms of download size; only
-# flash time grows by a few seconds. Calculated size is still used as
-# a floor in case Alpine's tarball ever outgrows 2 GB.
-IMG_SIZE_MB=2048
+# FAT32 partition size. Alphasound runs entirely from a tmpfs extracted
+# from the apkovl at boot, so nothing at runtime depends on how much
+# disk we allocate. SD space is only needed for:
+#   - kernel / initramfs / modloop  ~120 MB
+#   - current apkovl                ~50 MB (car) / ~100 MB (home)
+#   - preserved .bak apkovl         ~50 MB (car) / ~100 MB (home)
+#   - new apkovl during upload      ~50 MB (car) / ~100 MB (home)  (transient)
+#   - Roon tarball (home only)      ~50 MB
+#   - persistent state (SSH keys, BT pairings)
+# Earlier we flat-sized to 2 GB. xz compresses the FAT32 free-space
+# zeros to ~nothing so the download was still small, but Pi Imager
+# decompresses and writes the full stream — on a Class 4 card that was
+# ~8 minutes of flashing, ~90% of which was writing zeros. Sizing to
+# the actual working set cuts that proportionally. Calculated size is
+# still a floor so the Alpine tarball always fits.
+if [ "$VARIANT" = "home" ]; then
+    IMG_SIZE_MB=768
+else
+    IMG_SIZE_MB=384
+fi
 CALCULATED_IMG_SIZE_MB=$(( (TARBALL_SIZE + APKOVL_SIZE + 64*1024*1024) / 1024 / 1024 + 1 ))
 [ "$CALCULATED_IMG_SIZE_MB" -gt "$IMG_SIZE_MB" ] && IMG_SIZE_MB=$CALCULATED_IMG_SIZE_MB
 echo "Image size: ${IMG_SIZE_MB}MB"
