@@ -41,6 +41,17 @@ start() {
         rc-update del bluetooth default 2>/dev/null
         rc-update del bluealsa default 2>/dev/null
         eend 0
+    else
+        # Bluetooth kernel modules are cmdline-blacklisted so they don't
+        # load during sysinit's hwdrivers scan (~1s saved when BT is
+        # disabled). When the user has BT enabled we need to load them
+        # now — before bluetoothd/bluealsa try to open hci0 in the
+        # default runlevel. Runs in parallel with the other boot-runlevel
+        # services, so the ~0.4s chip handshake is mostly hidden.
+        ebegin "loading Bluetooth kernel modules"
+        modprobe hci_bcm 2>/dev/null
+        modprobe bluetooth 2>/dev/null
+        eend 0
     fi
 
     # mDNS is only useful in client mode (so you can ssh alphasound.local
