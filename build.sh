@@ -377,6 +377,13 @@ $SUDO tar xzf "${WORK_DIR}/${ALPINE_TARBALL}" -C "${MOUNT_DIR}/"
 # that never gets a v6 address.
 $SUDO sed -i 's/$/ ipv6.disable=1/' "${MOUNT_DIR}/cmdline.txt"
 
+# Quiet the kernel: suppress dmesg output on the active consoles
+# (serial + HDMI). Every printk hitting the 115200-baud mini-UART
+# takes ~100us; across ~5000 lines of boot chatter that's ~0.5s
+# wasted. loglevel=0 silences even KERN_EMERG; `quiet` alone still
+# prints warnings. logo.nologo skips the framebuffer logo blit too.
+$SUDO sed -i 's/$/ quiet loglevel=0 logo.nologo/' "${MOUNT_DIR}/cmdline.txt"
+
 # Preload snd_bcm2835 in initramfs (append to the existing modules=).
 # The kernel audio driver takes 1-2s to initialise and register the
 # ALSA card; doing it in initramfs rather than waiting for OpenRC's
@@ -395,6 +402,22 @@ $SUDO tee "${MOUNT_DIR}/usercfg.txt" > /dev/null << 'EOF'
 
 # Minimise GPU memory for headless use
 gpu_mem=16
+
+# --- Boot-time knobs ---
+# Skip the rainbow splash screen that the GPU firmware draws before
+# the kernel takes over — saves ~1s on HDMI-connected installs and is
+# invisible on headless ones.
+disable_splash=1
+
+# Don't stall the firmware waiting for anything to settle — default
+# boot_delay is 1s.
+boot_delay=0
+
+# Let the CPU run at full tilt for the first 60s of boot regardless of
+# temperature / governor. We're single-digit seconds from power-on to
+# AirPlay-ready, so there's no thermal concern, and it shaves time off
+# every phase that's CPU-bound (apkovl decompress especially).
+initial_turbo=60
 
 # Enable audio
 dtparam=audio=on
