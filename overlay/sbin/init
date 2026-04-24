@@ -15,6 +15,16 @@
 # wrong with the date set, the exec at the bottom still runs, so the
 # worst case is "system boots with a 1970 clock like before".
 
+# init-start checkpoint — records /proc/uptime at the moment the
+# kernel has finished loading and handed off to userspace init. The
+# difference between this and the first OpenRC checkpoint (clock-set
+# in sysinit) tells us how much of the pre-userspace window is
+# firmware+kernel+initramfs work vs how much is OpenRC sysinit
+# overhead. Must come before date -s, otherwise our 2025-era build
+# timestamp would overwrite the /proc/uptime-anchored seconds the
+# checkpoint helper reads.
+/usr/local/bin/alphasound-checkpoint init-start 2>/dev/null || true
+
 if [ -r /etc/alphasound-build-time ]; then
     /bin/date -s "$(cat /etc/alphasound-build-time)" >/dev/null 2>&1
 fi
