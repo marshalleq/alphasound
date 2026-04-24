@@ -394,6 +394,16 @@ $SUDO sed -i 's/$/ ipv6.disable=1/' "${MOUNT_DIR}/cmdline.txt"
 # prints warnings. logo.nologo skips the framebuffer logo blit too.
 $SUDO sed -i 's/$/ quiet loglevel=0 logo.nologo/' "${MOUNT_DIR}/cmdline.txt"
 
+# Blacklist the Bluetooth kernel modules so hwdrivers doesn't autoload
+# them during sysinit (~1s saved). alphasound-features loads them on
+# demand via modprobe when ALPHASOUND_BLUETOOTH=yes — so users who
+# want BT still get it, users who disable it now save real boot time
+# instead of only skipping the userspace daemon. Ordering matters:
+# hci_bcm depends on hci_uart+bluetooth, so blacklisting the top
+# module is enough, but we explicitly list each to be defensive
+# against future changes to modprobe's dependency resolution.
+$SUDO sed -i 's|$| modprobe.blacklist=hci_bcm,btbcm,hci_uart,bluetooth,bnep,rfcomm|' "${MOUNT_DIR}/cmdline.txt"
+
 # Preload snd_bcm2835 in initramfs (append to the existing modules=).
 # The kernel audio driver takes 1-2s to initialise and register the
 # ALSA card; doing it in initramfs rather than waiting for OpenRC's
