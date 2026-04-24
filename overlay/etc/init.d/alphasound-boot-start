@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+# Measurement-only service: fires the `boot-start` checkpoint at the
+# start of the boot runlevel, BEFORE bootmisc/hostname/modules/sysctl
+# and our 4 other boot-runlevel services. Difference between this and
+# `sysinit-done` tells us how long OpenRC spends transitioning between
+# runlevels (should be sub-100ms); difference between this and
+# persist-start/features-start/audio-config-start tells us what the
+# "boot prefix" (bootmisc/hostname/modules/sysctl) actually costs.
+
+description="Boot-timing checkpoint: start of boot runlevel"
+
+depend() {
+    before bootmisc hostname modules sysctl \
+           alphasound-rollback alphasound-persist \
+           alphasound-features alphasound-audio
+}
+
+start() {
+    /usr/local/bin/alphasound-checkpoint boot-start
+    return 0
+}

@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Measurement-only service: fires the `sysinit-done` checkpoint at the
+# end of the sysinit runlevel so we can see how much of the pre-boot
+# window goes to devfs/hwdrivers/mdev/modloop/alphasound-clock versus
+# the (later) boot-runlevel ramp-up. No functional effect.
+
+description="Boot-timing checkpoint: end of sysinit runlevel"
+
+depend() {
+    after devfs dmesg hwdrivers mdev modloop alphasound-clock
+}
+
+start() {
+    /usr/local/bin/alphasound-checkpoint sysinit-done
+    return 0
+}

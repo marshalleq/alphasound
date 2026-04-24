@@ -56,13 +56,13 @@ fi
 # driver never loads). shutdown lets openrc tear down cleanly. Our apkovl
 # replaces /etc/runlevels wholesale, so if we don't list these here, they
 # won't be enabled.
-SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop alphasound-clock"
+SYSINIT_SVCS="devfs dmesg hwdrivers mdev modloop alphasound-clock alphasound-sysinit-done"
 # hwclock excluded: Pi has no battery-backed RTC, so the service just
 # logs errors trying to talk to /dev/rtc on every boot.
 # syslog excluded: this appliance logs to /dev/console via alphasound.start
 # and to stderr via OpenRC; persistent syslog to /var/log/messages isn't
 # useful when the rootfs is tmpfs (wiped on every reboot) and saves ~1s.
-BOOT_SVCS_COMMON="bootmisc hostname modules sysctl alphasound-rollback alphasound-persist alphasound-features alphasound-audio"
+BOOT_SVCS_COMMON="alphasound-boot-start bootmisc hostname modules sysctl alphasound-rollback alphasound-persist alphasound-features alphasound-audio"
 if [ "$VARIANT" = "home" ]; then
     BOOT_SVCS="$BOOT_SVCS_COMMON alphasound-splash"
 else
