@@ -7,7 +7,9 @@ run-name: ${{ github.event_name == 'pull_request' && format('Check - {0}', githu
 # system in a container and exercises it (smoke-test.sh), and fails if any
 # shipped Alpine package has a known vulnerability that a newer package
 # already fixes. On main (push, the weekly schedule, or a start from the
-# Dependabot auto-merge workflow) it then publishes a release.
+# Dependabot auto-merge workflow) the separate "release" job publishes it.
+# Only "release" can write to the repository, and it runs no third-party
+# actions: the scanner never sees a write token.
 #
 # The weekly scheduled rebuild is what picks up Alpine package security
 # fixes: build.sh always installs the newest packages in the pinned branch.
@@ -28,7 +30,9 @@ jobs:
     name: build
     runs-on: ubuntu-24.04-arm
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      alpine-release: ${{ steps.alpine.outputs.release }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -46,6 +50,10 @@ jobs:
           docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:v0.11.0 -S warning -s sh -e SC3043,SC2034 \
             overlay/etc/alphasound/*.sh overlay/etc/local.d/*.start overlay/etc/init.d/* \
             overlay/var/www/cgi-bin/* overlay/usr/local/bin/alphasound-checkpoint overlay/sbin/init
+
+      - name: Read the Alpine release
+        id: alpine
+        run: echo "release=$(sed -n 's/^ALPINE_RELEASE="\(.*\)"$/\1/p' build.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl
@@ -77,7 +85,7 @@ jobs:
           done
 
       - name: Scan home variant packages
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
           path: ${{ runner.temp }}/packages-home
           fail-build: false
@@ -85,7 +93,7 @@ jobs:
           output-file: ${{ runner.temp }}/grype-home.json
 
       - name: Scan car variant packages
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
           path: ${{ runner.temp }}/packages-car
           fail-build: false
@@ -95,18 +103,43 @@ jobs:
       - name: Fail on vulnerabilities that already have a fix
         run: python3 -I .github/scripts/report-vulns.py --fail-on-fixed "$RUNNER_TEMP/grype-home.json" "$RUNNER_TEMP/grype-car.json" >> "$GITHUB_STEP_SUMMARY"
 
+      # Uploaded on pull requests too, so this step is tested before main.
+      - name: Keep the built files for the release job
+        uses: actions/upload-artifact@v7
+        with:
+          name: deploy
+          path: |
+            deploy/*.img.xz
+            deploy/*.apkovl.tar.gz
+            deploy/*.packages.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    name: release
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch the built files
+        uses: actions/download-artifact@v8
+        with:
+          name: deploy
+          path: deploy
+
       # `gh release create` ships pre-installed on GitHub runners, so we
       # avoid the softprops/action-gh-release dependency.
       - name: Create Release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUM: ${{ github.run_number }}
+          ALPINE_RELEASE: ${{ needs.build.outputs.alpine-release }}
         run: |
           DATE_STR=$(date +'%Y%m%d')
           TAG="build-${DATE_STR}-${RUN_NUM}"
-          ALPINE_RELEASE=$(sed -n 's/^ALPINE_RELEASE="\(.*\)"$/\1/p' build.sh)
-          gh release create "$TAG" \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Alphasound ${DATE_STR}" \
             --notes "Automated build from \`main\` branch.
 
