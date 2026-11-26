@@ -30,14 +30,16 @@ jobs:
   watch:
     name: watch
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # GH_TOKEN is set only on the steps that run gh, so the third-party scan
+    # steps never have it in their environment.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
       - name: Download the latest release's package lists
         id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release view --json tagName,createdAt --jq '"tag=\(.tagName)\ndate=\(.createdAt)"' >> "$GITHUB_OUTPUT"
           gh release download --pattern 'alphasound-*.packages.tar.gz' --dir "$RUNNER_TEMP/rel"
@@ -52,7 +54,7 @@ jobs:
           done
 
       - name: Scan home variant packages
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
           path: ${{ runner.temp }}/packages-home
           fail-build: false
@@ -60,7 +62,7 @@ jobs:
           output-file: ${{ runner.temp }}/grype-home.json
 
       - name: Scan car variant packages
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
           path: ${{ runner.temp }}/packages-car
           fail-build: false
@@ -78,6 +80,8 @@ jobs:
       # every vulnerability that has a fix.
       - name: Start a rebuild to ship available fixes
         if: steps.vulns.outputs.fixed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run build.yml --ref main
 
       - name: Run the checks
@@ -93,6 +97,8 @@ jobs:
           python3 -I .github/scripts/check-image.py
 
       - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           title="Advisory watch: findings that apply to Alphasound"
           existing="$(gh issue list --state open --search "\"$title\" in:title" --json number,title --jq "[.[] | select(.title == \"$title\")][0].number // empty")"
