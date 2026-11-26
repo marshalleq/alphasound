@@ -1,0 +1,18 @@
+# Weekly version updates for the GitHub Actions this repo uses. Minor and
+# patch bumps are grouped into one PR; major bumps arrive as separate PRs
+# and are never auto-merged. Security updates are raised separately by
+# GitHub as soon as an advisory lands.
+#
+# Dependabot cannot see what the image itself ships: the Alpine release and
+# packages are pinned in build.sh and installed with apk. Those are covered
+# by the weekly rebuild (build.yml) and the daily advisory watch
+# (advisory-watch.yml).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

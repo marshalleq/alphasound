@@ -1,0 +1,107 @@
+name: Advisory watch
+
+run-name: Advisory watch - ${{ github.event_name }}
+
+# Dependabot only sees the GitHub Actions this repo uses. The image's real
+# dependencies are Alpine Linux and its packages, pinned in build.sh. Every
+# day this checks the latest published release for:
+#  - Alpine end of life, and packages from Alpine's community repository
+#    (only patched on the latest stable branch),
+#  - a newer Alpine point release for the boot media,
+#  - vulnerabilities with a fix available in shipped packages (and then
+#    starts a rebuild, which installs the fixes),
+#  - licences that are not on .github/licence-allowlist.txt,
+#  - a release more than 8 days old (the weekly build stopped).
+# It keeps one open issue up to date while something applies and closes it
+# when nothing does. If a check cannot run, the job fails (so GitHub emails)
+# instead of reporting "all clear".
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  watch:
+    name: watch
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download the latest release's package lists
+        id: release
+        run: |
+          gh release view --json tagName,createdAt --jq '"tag=\(.tagName)\ndate=\(.createdAt)"' >> "$GITHUB_OUTPUT"
+          gh release download --pattern 'alphasound-*.packages.tar.gz' --dir "$RUNNER_TEMP/rel"
+          for v in home car; do
+            f="$RUNNER_TEMP/rel/alphasound-$v.packages.tar.gz"
+            [ -f "$f" ] || { echo "::error::The latest release has no $(basename "$f")"; exit 1; }
+            mkdir -p "$RUNNER_TEMP/packages-$v"
+            tar xzf "$f" -C "$RUNNER_TEMP/packages-$v"
+            count=$(grep -c '^P:' "$RUNNER_TEMP/packages-$v/lib/apk/db/installed")
+            echo "$v: $count packages"
+            [ "$count" -gt 50 ] || { echo "::error::$v package list has only $count packages"; exit 1; }
+          done
+
+      - name: Scan home variant packages
+        uses: anchore/scan-action@v7
+        with:
+          path: ${{ runner.temp }}/packages-home
+          fail-build: false
+          output-format: json
+          output-file: ${{ runner.temp }}/grype-home.json
+
+      - name: Scan car variant packages
+        uses: anchore/scan-action@v7
+        with:
+          path: ${{ runner.temp }}/packages-car
+          fail-build: false
+          output-format: json
+          output-file: ${{ runner.temp }}/grype-car.json
+
+      - name: Summarise vulnerabilities
+        id: vulns
+        run: |
+          python3 -I .github/scripts/report-vulns.py --fixed-out "$RUNNER_TEMP/fixed.md" \
+            "$RUNNER_TEMP/grype-home.json" "$RUNNER_TEMP/grype-car.json" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s "$RUNNER_TEMP/fixed.md" ]; then echo "fixed=true" >> "$GITHUB_OUTPUT"; fi
+
+      # A rebuild installs the newest packages in the branch, which clears
+      # every vulnerability that has a fix.
+      - name: Start a rebuild to ship available fixes
+        if: steps.vulns.outputs.fixed == 'true'
+        run: gh workflow run build.yml --ref main
+
+      - name: Run the checks
+        env:
+          OUTPUT_FILE: ${{ runner.temp }}/findings.md
+          PACKAGES_DIRS: ${{ runner.temp }}/packages-home ${{ runner.temp }}/packages-car
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_DATE: ${{ steps.release.outputs.date }}
+          REBUILD_STARTED: ${{ steps.vulns.outputs.fixed == 'true' }}
+        run: |
+          FIXED_VULNS="$(cat "$RUNNER_TEMP/fixed.md")"
+          export FIXED_VULNS
+          python3 -I .github/scripts/check-image.py
+
+      - name: Open, update or close the tracking issue
+        run: |
+          title="Advisory watch: findings that apply to Alphasound"
+          existing="$(gh issue list --state open --search "\"$title\" in:title" --json number,title --jq "[.[] | select(.title == \"$title\")][0].number // empty")"
+          if [ -s "$RUNNER_TEMP/findings.md" ]; then
+            if [ -n "$existing" ]; then
+              gh issue edit "$existing" --body-file "$RUNNER_TEMP/findings.md"
+            else
+              gh issue create --title "$title" --body-file "$RUNNER_TEMP/findings.md"
+            fi
+          elif [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "The daily check ran and nothing applies any more."
+          fi

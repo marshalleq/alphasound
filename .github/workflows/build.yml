@@ -1,6 +1,19 @@
 name: Build Alphasound Image
 
+run-name: ${{ github.event_name == 'pull_request' && format('Check - {0}', github.event.pull_request.title) || format('Build - {0}', github.event_name) }}
+
+# One job, named "build", is the required check for pull requests. It lints
+# the workflow and shell files, builds both image variants, starts the built
+# system in a container and exercises it (smoke-test.sh), and fails if any
+# shipped Alpine package has a known vulnerability that a newer package
+# already fixes. On main (push, the weekly schedule, or a start from the
+# Dependabot auto-merge workflow) it then publishes a release.
+#
+# The weekly scheduled rebuild is what picks up Alpine package security
+# fixes: build.sh always installs the newest packages in the pinned branch.
+
 on:
+  pull_request:
   push:
     branches: [main]
   schedule:
@@ -8,14 +21,31 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    name: build
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+
+      - name: Lint workflow files
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -color
+
+      - name: Lint shell scripts
+        run: |
+          docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:v0.11.0 -S warning build.sh .github/scripts/*.sh
+          # The overlay scripts run under BusyBox ash on the device, which
+          # supports `local` (SC3043). OpenRC reads command=, description= and
+          # friends after sourcing an init script, and several scripts read
+          # the same config keys, so "appears unused" (SC2034) is noise here.
+          docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:v0.11.0 -S warning -s sh -e SC3043,SC2034 \
+            overlay/etc/alphasound/*.sh overlay/etc/local.d/*.start overlay/etc/init.d/* \
+            overlay/var/www/cgi-bin/* overlay/usr/local/bin/alphasound-checkpoint overlay/sbin/init
 
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y dosfstools parted xz-utils curl
@@ -30,21 +60,57 @@ jobs:
           VARIANT: car
         run: ./build.sh
 
+      - name: Smoke test home variant
+        run: .github/scripts/smoke-test.sh home
+
+      - name: Smoke test car variant
+        run: .github/scripts/smoke-test.sh car
+
+      - name: Unpack package lists for scanning
+        run: |
+          for v in home car; do
+            mkdir -p "$RUNNER_TEMP/packages-$v"
+            tar xzf "deploy/alphasound-$v.packages.tar.gz" -C "$RUNNER_TEMP/packages-$v"
+            count=$(grep -c '^P:' "$RUNNER_TEMP/packages-$v/lib/apk/db/installed")
+            echo "$v: $count packages"
+            [ "$count" -gt 50 ] || { echo "::error::$v package list has only $count packages"; exit 1; }
+          done
+
+      - name: Scan home variant packages
+        uses: anchore/scan-action@v7
+        with:
+          path: ${{ runner.temp }}/packages-home
+          fail-build: false
+          output-format: json
+          output-file: ${{ runner.temp }}/grype-home.json
+
+      - name: Scan car variant packages
+        uses: anchore/scan-action@v7
+        with:
+          path: ${{ runner.temp }}/packages-car
+          fail-build: false
+          output-format: json
+          output-file: ${{ runner.temp }}/grype-car.json
+
+      - name: Fail on vulnerabilities that already have a fix
+        run: python3 -I .github/scripts/report-vulns.py --fail-on-fixed "$RUNNER_TEMP/grype-home.json" "$RUNNER_TEMP/grype-car.json" >> "$GITHUB_STEP_SUMMARY"
+
       # `gh release create` ships pre-installed on GitHub runners, so we
-      # avoid the softprops/action-gh-release dependency (which was the
-      # last lingering Node 20 action in this workflow).
+      # avoid the softprops/action-gh-release dependency.
       - name: Create Release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUM: ${{ github.run_number }}
         run: |
           DATE_STR=$(date +'%Y%m%d')
           TAG="build-${DATE_STR}-${RUN_NUM}"
+          ALPINE_RELEASE=$(sed -n 's/^ALPINE_RELEASE="\(.*\)"$/\1/p' build.sh)
           gh release create "$TAG" \
             --title "Alphasound ${DATE_STR}" \
             --notes "Automated build from \`main\` branch.
 
-          **Base OS**: Alpine Linux 3.21 (aarch64, diskless)
+          **Base OS**: Alpine Linux ${ALPINE_RELEASE} (aarch64, diskless)
           **Shairport-sync**: from Alpine community repo
           **Bluetooth A2DP**: auto-pairing for non-Apple devices
           **Filesystem**: Runs entirely from RAM — SD card is read-only by design
@@ -53,11 +119,15 @@ jobs:
           - \`alphasound-home.img.xz\` — full feature set (display support, CEC, Roon, web UI brightness control). Use on a home/desk install.
           - \`alphasound-car.img.xz\` — stripped for boot speed; no Python/display/CEC/Roon. Use for behind-dash or trunk-mount installs where cold-start latency matters.
 
+          The \`.packages.tar.gz\` files list the exact Alpine packages in each variant; the daily advisory watch scans them.
+
           ## Quick start
           1. Flash the appropriate \`.img.xz\` to an SD card (Raspberry Pi Imager can flash \`.xz\` directly)
           2. Edit \`alphasound.txt\` on the SD card to set your preferences
           3. Insert SD card, power on, connect to the WiFi network, AirPlay" \
             deploy/alphasound-home.img.xz \
             deploy/alphasound-home.apkovl.tar.gz \
+            deploy/alphasound-home.packages.tar.gz \
             deploy/alphasound-car.img.xz \
-            deploy/alphasound-car.apkovl.tar.gz
+            deploy/alphasound-car.apkovl.tar.gz \
+            deploy/alphasound-car.packages.tar.gz

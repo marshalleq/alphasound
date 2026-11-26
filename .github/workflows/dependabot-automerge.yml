@@ -1,0 +1,55 @@
+name: Dependabot auto-merge
+
+run-name: Auto-merge - ${{ github.event.pull_request.title }}
+
+# Merges Dependabot patch and minor PRs once the required checks pass, then
+# starts the build, because a merge made with the built-in token does not
+# trigger push workflows. Majors wait for a human.
+#
+# Dependabot here only updates GitHub Actions. A green check proves an
+# action works on pull requests; the build then proves it on main.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+# A Dependabot rebase replaces the old wait.
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    name: automerge
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      - name: Read Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for the required checks
+        id: eligible
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          # Give the other workflows time to register their checks first.
+          sleep 90
+          gh pr checks "$PR_URL" --required --watch --interval 30
+
+      - name: Merge
+        if: steps.eligible.outcome == 'success'
+        run: gh pr merge --squash "$PR_URL"
+
+      - name: Start the build on the default branch
+        if: steps.eligible.outcome == 'success'
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref main
