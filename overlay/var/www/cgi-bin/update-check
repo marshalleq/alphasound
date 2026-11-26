@@ -13,6 +13,7 @@ REPO=$(grep '^ALPHASOUND_UPDATE_REPO=' /media/mmcblk0p1/alphasound.txt 2>/dev/nu
        | cut -d= -f2- | head -1)
 REPO=${REPO:-marshalleq/alphasound}
 CURRENT=$(cat /etc/alphasound-version 2>/dev/null || echo unknown)
+VARIANT=$(cat /etc/alphasound-variant 2>/dev/null)
 
 reply_json() {
     code=$1; body=$2
@@ -22,16 +23,25 @@ reply_json() {
     exit
 }
 
+# Releases carry one apkovl per variant (alphasound-home / alphasound-car).
+# Builds before the variant was recorded cannot tell which one they need:
+# say so rather than guess.
+case "$VARIANT" in
+    home|car) ;;
+    *) reply_json "500 Internal Server Error" "{\"error\":\"this build does not record its variant (home or car); update once by uploading the matching apkovl from the Releases page\",\"current\":\"$CURRENT\"}" ;;
+esac
+ASSET="alphasound-${VARIANT}.apkovl.tar.gz"
+
 # wget with -T 10 timeout. Output to stdout. Fail closed if no network.
 JSON=$(wget -q -T 10 -O - "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null) || \
     reply_json "503 Service Unavailable" "{\"error\":\"could not reach GitHub (no internet?)\",\"current\":\"$CURRENT\"}"
 
 # jq is in PACKAGES so this is robust.
 LATEST=$(printf '%s' "$JSON" | jq -r '.tag_name // ""')
-URL=$(printf '%s' "$JSON" | jq -r '.assets[]? | select(.name == "alphasound.apkovl.tar.gz") | .browser_download_url' | head -1)
+URL=$(printf '%s' "$JSON" | jq -r --arg asset "$ASSET" '.assets[]? | select(.name == $asset) | .browser_download_url' | head -1)
 
 if [ -z "$LATEST" ] || [ -z "$URL" ]; then
-    reply_json "502 Bad Gateway" "{\"error\":\"release missing apkovl asset\",\"current\":\"$CURRENT\"}"
+    reply_json "502 Bad Gateway" "{\"error\":\"release $LATEST has no $ASSET\",\"current\":\"$CURRENT\"}"
 fi
 
 UPDATE_AVAILABLE=false
