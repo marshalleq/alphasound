@@ -16,8 +16,8 @@ set -euo pipefail
 # Requires Linux (loop devices, mkfs.vfat) plus: docker, curl, parted,
 # dosfstools, xz-utils. Local runs need sudo for losetup/mount.
 
-ALPINE_VERSION="3.21"
-ALPINE_RELEASE="3.21.6"
+ALPINE_VERSION="3.24"
+ALPINE_RELEASE="3.24.4"
 ALPINE_ARCH="aarch64"
 ALPINE_TARBALL="alpine-rpi-${ALPINE_RELEASE}-${ALPINE_ARCH}.tar.gz"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${ALPINE_ARCH}/${ALPINE_TARBALL}"
