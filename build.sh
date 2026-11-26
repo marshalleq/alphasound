@@ -271,6 +271,9 @@ SHAIRPORT_EOF
         # rather than its mtime so we can safely backdate everything
         # else to epoch 0 without losing this reference.
         echo '${VERSION}' > /chroot/etc/alphasound-version
+        # alphasound-variant tells update-check which release asset
+        # (alphasound-home or alphasound-car apkovl) matches this device.
+        echo '${VARIANT}' > /chroot/etc/alphasound-variant
         echo '${ALPINE_RELEASE}' > /chroot/etc/alphasound-alpine-version
         date -u '+%Y-%m-%d %H:%M:%S' > /chroot/etc/alphasound-build-time
 

@@ -16,9 +16,10 @@ tar xzf "$APKOVL" -C / --exclude=etc/hosts --exclude=etc/hostname --exclude=etc/
 pass "unpacked $APKOVL"
 
 # --- Version stamps used by the web UI and the update compatibility check
-for f in /etc/alphasound-version /etc/alphasound-alpine-version /etc/alphasound-build-time; do
+for f in /etc/alphasound-version /etc/alphasound-alpine-version /etc/alphasound-build-time /etc/alphasound-variant; do
     [ -s "$f" ] || fail "$f is missing or empty"
 done
+[ "$(cat /etc/alphasound-variant)" = "$VARIANT" ] || fail "/etc/alphasound-variant is not $VARIANT"
 pass "version stamps present ($(cat /etc/alphasound-version), Alpine $(cat /etc/alphasound-alpine-version))"
 
 # --- Every runlevel entry points at an init script that exists, and every
@@ -108,5 +109,23 @@ pass "login accepts the configured password and sets a session cookie"
 http 200 http://127.0.0.1/cgi-bin/status --header "Cookie: alphasound=$token" >/dev/null
 jq -e . /tmp/body >/dev/null || fail "status did not return JSON: $(head -c 300 /tmp/body)"
 pass "status returns JSON with a valid session"
+
+# --- Update check picks this variant's apkovl from a release. A stand-in
+# wget returns a canned GitHub reply, so the test needs no network.
+mkdir -p /tmp/fakebin
+cat > /tmp/fakebin/wget <<'FAKE'
+#!/bin/sh
+cat <<'JSON'
+{"tag_name":"build-test-1","assets":[
+ {"name":"alphasound-home.apkovl.tar.gz","browser_download_url":"https://github.com/o/r/releases/download/build-test-1/alphasound-home.apkovl.tar.gz"},
+ {"name":"alphasound-car.apkovl.tar.gz","browser_download_url":"https://github.com/o/r/releases/download/build-test-1/alphasound-car.apkovl.tar.gz"}]}
+JSON
+FAKE
+chmod +x /tmp/fakebin/wget
+reply=$(HTTP_COOKIE="alphasound=$token" PATH="/tmp/fakebin:$PATH" /var/www/cgi-bin/update-check | sed '1,/^\r*$/d')
+url=$(printf '%s' "$reply" | jq -r .url)
+[ "$url" = "https://github.com/o/r/releases/download/build-test-1/alphasound-${VARIANT}.apkovl.tar.gz" ] \
+    || fail "update-check picked the wrong asset: $reply"
+pass "update-check offers alphasound-${VARIANT}.apkovl.tar.gz"
 
 echo "Smoke test passed for the $VARIANT variant."
