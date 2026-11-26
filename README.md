@@ -187,7 +187,26 @@ The image enables `enable_uart=1` so a USB-TTL adapter on GPIO 14 (TX) / 15 (RX)
 
 Requires Linux (loop devices + `mkfs.vfat`), plus: Docker, curl, parted, dosfstools, xz-utils. Runs sudo for `losetup`/`mount`. Pass `VARIANT=home` (default, full feature set) or `VARIANT=car` (stripped for fastest boot — no display stack, no Python, no Roon). Output lands in `deploy/alphasound-${VARIANT}.img.xz`. CI runs both in sequence and publishes both on every release.
 
-`build.sh` is the single source of truth for image builds. The GitHub Actions release workflow (`.github/workflows/build.yml`) just installs the dependencies and runs `./build.sh` — so what you build locally matches what gets released. Don't add inline build logic to the workflow; put it in `build.sh`.
+`build.sh` is the single source of truth for image builds. The GitHub Actions workflow (`.github/workflows/build.yml`) installs the dependencies and runs `./build.sh`, so what you build locally matches what gets released. Around the build it only lints, tests and scans (see below). Don't add inline build logic to the workflow; put it in `build.sh`.
+
+## Security and updates
+
+What runs by itself:
+
+- **Every pull request and every push to `main`** runs one check, `build`: it lints the workflow files (actionlint) and shell scripts (shellcheck), builds both variants, then starts each built system in a container and exercises it (`.github/scripts/smoke-test.sh`: service binaries link, dnsmasq, lighttpd and sshd accept their configuration, the web UI serves its page, refuses requests without a session and logs in). It fails if a shipped Alpine package has a known vulnerability that Alpine has already fixed. A release is published only from `main`, after the check passes.
+- **Every Monday** the image is rebuilt from scratch, which installs the newest Alpine packages in the pinned branch, so package security fixes reach the next release within a week.
+- **Every day** the advisory watch (`.github/workflows/advisory-watch.yml`) checks the latest release: Alpine end of life, a newer Alpine point release for the boot media, packages with a fixed vulnerability (it then starts a rebuild straight away), licences not on `.github/licence-allowlist.txt`, and a release older than 8 days. While anything applies it keeps one issue open, titled "Advisory watch: findings that apply to Alphasound".
+- **Dependabot** updates the GitHub Actions used here, weekly. Patch and minor updates merge themselves once `build` passes and then start a build; major updates wait for review. Dependabot cannot see Alpine packages: those are covered by the rebuild and the watch above.
+- **GitHub** scans the code (CodeQL default setup: Python, C, workflows) and blocks pushes that contain credentials.
+
+What you are told about, by issue or email: anything the advisory watch finds, failed builds, and Dependabot PRs that need a decision.
+
+Two limits worth knowing:
+
+- An apkovl update cannot move a device to a different Alpine release (`3.21` to `3.24`): the kernel and modules come from the flashed image. Moving release means reflashing.
+- Busybox, musl, openrc, apk-tools and wpa_supplicant live in `/bin`, `/sbin` and `/lib`, which the device takes from the boot media (`ALPINE_RELEASE` in `build.sh`), not from the apkovl. They are only updated by reflashing an image built from a newer point release.
+
+Package overrides: none. The image installs Alpine's packages as published.
 
 ## How it works
 

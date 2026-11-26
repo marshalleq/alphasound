@@ -294,6 +294,18 @@ SHAIRPORT_EOF
         echo '--- chroot ready ---'
     "
 
+# --- Package list for vulnerability and licence checks ---
+# The apk database is not shipped in the apkovl (/lib is excluded below),
+# so publish it separately with os-release, which names the Alpine branch.
+# CI and the daily advisory watch scan this file.
+APK_DB="lib/apk/db/installed"
+if [ ! -f "${CHROOT_DIR}/${APK_DB}" ]; then
+    echo "ERROR: ${APK_DB} not found in the chroot. If the Alpine upgrade moved the apk database (newer apk-tools use usr/lib/apk/db), update APK_DB in build.sh."
+    exit 1
+fi
+$SUDO tar czhf "${OUTPUT_DIR}/alphasound-${VARIANT}.packages.tar.gz" \
+    -C "${CHROOT_DIR}" etc/os-release etc/alpine-release "${APK_DB}"
+
 # --- Strip display/Roon artefacts for the car variant ---
 # These files are shipped via our overlay unconditionally so that the
 # home variant's build is simple; for car we delete them post-overlay
